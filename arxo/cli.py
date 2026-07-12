@@ -154,7 +154,44 @@ def cmd_note(args: argparse.Namespace) -> int:
 
 
 def cmd_index(args: argparse.Namespace) -> int:
-    return _not_implemented("index")
+    import json
+
+    from . import index as index_mod
+    from .config import load_config
+
+    try:
+        cfg = load_config(args.config)
+    except FileNotFoundError as e:
+        print(str(e), file=sys.stderr)
+        return 1
+
+    if args.action == "build":
+        count, msg = index_mod.build(cfg)
+        print(f"[arxo] {msg}", file=sys.stderr)
+        return 0 if count > 0 or "已索引" in msg else 1
+
+    if args.action == "search":
+        if not args.query:
+            print("[arxo] index search 需要查询词，例如：arxo index search 'VLA'", file=sys.stderr)
+            return 1
+        try:
+            if args.vector:
+                results = index_mod.vector_search(cfg, args.query, limit=args.limit)
+            else:
+                results = index_mod.search(cfg, args.query, limit=args.limit)
+        except NotImplementedError as e:
+            print(f"[arxo] {e}", file=sys.stderr)
+            return 2
+        except RuntimeError as e:
+            print(f"[arxo] {e}", file=sys.stderr)
+            return 1
+        print(json.dumps(results, ensure_ascii=False, indent=2))
+        for i, r in enumerate(results, 1):
+            print(f"  {i}. {r['title'][:60]}  ({r['path']})", file=sys.stderr)
+        print(f"[arxo] 命中 {len(results)} 篇", file=sys.stderr)
+        return 0
+
+    return 2
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -184,9 +221,11 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--overwrite", action="store_true", help="new: 覆盖已存在的笔记")
     sp.set_defaults(func=cmd_note)
 
-    sp = sub.add_parser("index", help="FTS5 索引：build/search")
+    sp = sub.add_parser("index", help="FTS5 索引：build / search <query>")
     sp.add_argument("action", choices=["build", "search"])
-    sp.add_argument("query", nargs="?")
+    sp.add_argument("query", nargs="?", help="search: 查询词")
+    sp.add_argument("--limit", type=int, default=10, help="search: 返回条数")
+    sp.add_argument("--vector", action="store_true", help="search: 用向量检索（暂未实现）")
     sp.set_defaults(func=cmd_index)
 
     return p
