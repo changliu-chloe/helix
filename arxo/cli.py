@@ -36,6 +36,30 @@ def cmd_status(args: argparse.Namespace) -> int:
     return 0
 
 
+def _dedup_papers(papers: list) -> list:
+    """按 paper_id 优先、标题归一化其次去重。保留先出现的（通常引用数更高/更相关）。"""
+    import re
+
+    seen_ids: set[str] = set()
+    seen_titles: set[str] = set()
+    out = []
+    for p in papers:
+        pid = (p.paper_id or "").strip()
+        if pid:
+            if pid in seen_ids:
+                continue
+            seen_ids.add(pid)
+            out.append(p)
+        else:
+            norm = re.sub(r"[^a-z0-9\s]", "", (p.title or "").lower()).strip()
+            if norm and norm in seen_titles:
+                continue
+            if norm:
+                seen_titles.add(norm)
+            out.append(p)
+    return out
+
+
 def cmd_search(args: argparse.Namespace) -> int:
     import json
 
@@ -50,33 +74,63 @@ def cmd_search(args: argparse.Namespace) -> int:
         return 1
 
     sources = [s.strip() for s in args.source.split(",") if s.strip()]
-    unsupported = [s for s in sources if s != "arxiv"]
-    if unsupported:
-        print(f"[arxo] 来源 {unsupported} 暂未实现（迭代 4 加入 s2/dblp），本次仅用 arxiv", file=sys.stderr)
-
-    try:
-        if args.query:
-            print(f"[arxo] 关键词检索 arXiv：{args.query}", file=sys.stderr)
-            keywords = [k.strip() for k in args.query.split(",") if k.strip()]
-            papers = arxiv.search_by_keywords(keywords, days=args.days, max_results=args.max_results)
-        else:
-            cats = cfg.all_categories()
-            if not cats:
-                print("[arxo] config 中没有任何 arXiv 分类，且未提供查询词", file=sys.stderr)
-                return 1
-            days = args.days if args.days is not None else 30
-            print(f"[arxo] 按 config 领域分类检索 arXiv（近 {days} 天）：{','.join(cats)}", file=sys.stderr)
-            papers = arxiv.search_by_categories(cats, days=days, max_results=args.max_results)
-    except RuntimeError as e:
-        print(str(e), file=sys.stderr)
+    known = {"arxiv", "s2", "dblp"}
+    unknown = [s for s in sources if s not in known]
+    if unknown:
+        print(f"[arxo] 未知来源 {unknown}，支持：arxiv,s2,dblp", file=sys.stderr)
         return 1
 
-    print(f"[arxo] 抓取 {len(papers)} 篇，开始打分筛选", file=sys.stderr)
+    papers: list = []
+    for src in sources:
+        try:
+            if src == "arxiv":
+                if args.query:
+                    print(f"[arxo] [arxiv] 关键词检索：{args.query}", file=sys.stderr)
+                    kws = [k.strip() for k in args.query.split(",") if k.strip()]
+                    got = arxiv.search_by_keywords(kws, days=args.days, max_results=args.max_results)
+                else:
+                    cats = cfg.all_categories()
+                    if not cats:
+                        print("[arxo] config 无 arXiv 分类且未提供查询词，跳过 arxiv", file=sys.stderr)
+                        got = []
+                    else:
+                        days = args.days if args.days is not None else 30
+                        print(f"[arxo] [arxiv] 按 config 分类检索（近 {days} 天）：{','.join(cats)}", file=sys.stderr)
+                        got = arxiv.search_by_categories(cats, days=days, max_results=args.max_results)
+            elif src == "s2":
+                from .sources import semantic_scholar
+
+                q = args.query or " ".join(cfg.domains[0].keywords[:3]) if cfg.domains else args.query
+                if not q:
+                    print("[arxo] s2 需要查询词或 config 领域，跳过 s2", file=sys.stderr)
+                    got = []
+                else:
+                    print(f"[arxo] [s2] 检索：{q}", file=sys.stderr)
+                    got = semantic_scholar.search(q, limit=args.max_results, api_key=cfg.semantic_scholar_api_key)
+            else:  # dblp
+                from .sources import dblp
+
+                q = args.query or (" ".join(cfg.domains[0].keywords[:3]) if cfg.domains else "")
+                if not q:
+                    print("[arxo] dblp 需要查询词或 config 领域，跳过 dblp", file=sys.stderr)
+                    got = []
+                else:
+                    print(f"[arxo] [dblp] 检索：{q}", file=sys.stderr)
+                    got = dblp.search(q, limit=args.max_results)
+        except RuntimeError as e:
+            print(f"[arxo] [{src}] 失败（跳过）：{e}", file=sys.stderr)
+            got = []
+        print(f"[arxo] [{src}] 拉回 {len(got)} 篇", file=sys.stderr)
+        papers.extend(got)
+
+    papers = _dedup_papers(papers)
+    print(f"[arxo] 合并去重后 {len(papers)} 篇，开始打分筛选", file=sys.stderr)
     scored = score_papers(papers, cfg)
     top = scored[: args.top_n]
 
     output = {
         "query": args.query or "",
+        "sources": sources,
         "total_fetched": len(papers),
         "total_scored": len(scored),
         "top_papers": [p.to_dict() for p in top],
@@ -84,7 +138,7 @@ def cmd_search(args: argparse.Namespace) -> int:
     print(json.dumps(output, ensure_ascii=False, indent=2))
 
     for i, p in enumerate(top, 1):
-        print(f"  {i}. [{p.score_final}] {p.title[:70]}", file=sys.stderr)
+        print(f"  {i}. [{p.score_final}] ({p.source}) {p.title[:60]}", file=sys.stderr)
     return 0
 
 
