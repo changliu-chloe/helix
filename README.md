@@ -10,17 +10,27 @@
 - **配置驱动**：检索方向、打分权重全部由 `config.yaml` 决定。
 - **笔记为主 + 索引可查**：深读结果落 Markdown（可对接 Obsidian vault），另建 SQLite FTS5 全文索引供检索。
 
-## 安装
+## 搭环境
 
 ```bash
-pip install -e .
+# 1. 用 uv 建虚拟环境并安装（Python 3.13）
+uv venv --python 3.13
+uv pip install -e .
+
+# 2. 启用自然语言触发（把 skills 软链到 .claude/skills/）
+arxo init                    # 项目级：仅本项目目录下的 Claude Code 生效
+# arxo init --scope global   # 或全局：任何目录都能触发（软链到 ~/.claude/skills/）
 ```
+
+`arxo init` 幂等，可反复执行；软链含本机绝对路径，已 gitignore，**每台机器 clone 后各自跑一次**。
+做完这步，就能在 Claude Code 等支持 skill 的 agent 里用自然语言触发 search / deep-read / daily，
+无需手敲命令。纯 CLI（`arxo search` 等）不依赖这步，随时可用。
 
 ## 快速开始
 
 ```bash
 arxo status                              # 查看配置与研究领域
-arxo search "vision language action" --top-n 5   # 检索并打分（迭代 1）
+arxo search "vision language action" --top-n 5   # 检索并打分
 ```
 
 先编辑 `config.yaml`，把 `research_domains` 换成你的关注方向。
@@ -29,6 +39,7 @@ arxo search "vision language action" --top-n 5   # 检索并打分（迭代 1）
 
 | 命令 | 说明 | 状态 |
 |---|---|---|
+| `arxo init` | 软链 skills 到 .claude/skills，启用自然语言触发 | ✅ |
 | `arxo status` | 配置/库/索引状态 | ✅ |
 | `arxo search "<query>"` | 检索 + 4维打分（arxiv/s2/dblp 多源合并去重） | ✅ |
 | `arxo note new <id>` | 抓论文生成深读笔记骨架 | ✅ |

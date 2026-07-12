@@ -16,6 +16,18 @@ def _not_implemented(name: str) -> int:
     return 2
 
 
+def cmd_init(args: argparse.Namespace) -> int:
+    from .init import link_skills
+
+    logs = link_skills(scope=args.scope)
+    for line in logs:
+        print(f"[arxo] {line}", file=sys.stderr)
+    linked = sum(1 for x in logs if x.startswith("已链接"))
+    print(f"[arxo] init 完成：新建 {linked} 个软链（scope={args.scope}）", file=sys.stderr)
+    print("[arxo] 现在可在支持 skill 的 agent 里用自然语言触发：search / deep-read / daily", file=sys.stderr)
+    return 0
+
+
 def cmd_status(args: argparse.Namespace) -> int:
     from .config import load_config
 
@@ -256,6 +268,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     sp = sub.add_parser("status", help="显示配置/库/索引状态")
     sp.set_defaults(func=cmd_status)
+
+    sp = sub.add_parser("init", help="把 skills 软链到 .claude/skills，启用自然语言触发")
+    sp.add_argument("--scope", choices=["project", "global"], default="project",
+                    help="project: 本项目 .claude/skills（默认）；global: ~/.claude/skills")
+    sp.set_defaults(func=cmd_init)
 
     sp = sub.add_parser("search", help="检索并打分论文（arxiv/s2/dblp）")
     sp.add_argument("query", nargs="?", help="检索词（逗号分隔多词；留空则按 config 领域检索）")

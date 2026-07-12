@@ -5,6 +5,9 @@ ref/
 .arxo/
 notes/
 
+# arxo init 生成的本机软链（含绝对路径，每台机器自行 `arxo init` 重建）
+.claude/
+
 # Python
 __pycache__/
 *.py[cod]
