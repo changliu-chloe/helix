@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "arxo"
+version = "0.1.0"
+description = "论文检索追踪 + 深读理解 CLI —— arXiv/S2/DBLP 检索、打分、Markdown 笔记、FTS5 索引"
+readme = "README.md"
+requires-python = ">=3.12"
+authors = [{ name = "changliu" }]
+dependencies = [
+    "requests>=2.28",
+    "PyYAML>=6.0",
+]
+
+[project.optional-dependencies]
+# 向量检索（后续迭代再启用）
+vector = ["sentence-transformers", "numpy"]
+dev = ["pytest"]
+
+[project.scripts]
+arxo = "arxo.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["arxo*"]

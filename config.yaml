@@ -1,0 +1,37 @@
+# arxo 配置：研究领域 → 关键词 / arXiv 分类 / 优先级
+# 检索与打分完全由本文件驱动。修改这里即可调整关注方向。
+
+language: zh                 # zh | en，影响笔记语言
+notes_dir: notes             # 笔记库根目录（可改为你的 Obsidian vault 路径）
+papers_subdir: papers        # 单篇深读笔记子目录（相对 notes_dir）
+daily_subdir: daily          # 每日推荐笔记子目录（相对 notes_dir）
+
+# Semantic Scholar API key（可选，留空走匿名限流接口）
+semantic_scholar_api_key: ''
+
+# 打分权重（四维，和为 1.0）。见 score.py
+score_weights:
+  relevance: 0.40            # 相关性：与研究关键词/分类的匹配度
+  recency: 0.20             # 新近性：越新越高
+  popularity: 0.30          # 热度：引用数 / 新论文热度
+  quality: 0.10             # 质量：从摘要推断的创新性
+
+# 全局排除关键词（命中即降权/剔除）
+excluded_keywords:
+  - workshop
+
+# 研究领域。每个领域有独立的关键词、arXiv 分类和优先级(1-5)
+research_domains:
+  示例-VLA模型:
+    keywords:
+      - vision language action
+      - VLA
+      - robotic manipulation
+      - embodied AI
+      - OpenVLA
+    arxiv_categories:
+      - cs.RO
+      - cs.CV
+      - cs.AI
+      - cs.LG
+    priority: 5

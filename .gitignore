@@ -1,0 +1,21 @@
+# 参考项目，仅本地参考，不纳入版本控制
+ref/
+
+# arxo 运行时数据
+.arxo/
+notes/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+env/
+
+# 缓存/临时
+*.tmp
+.DS_Store
