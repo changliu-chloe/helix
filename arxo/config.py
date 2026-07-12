@@ -33,8 +33,18 @@ class Config:
     _path: Path | None = None
 
     @property
+    def base_dir(self) -> Path:
+        """所有相对路径的锚点 = config.yaml 所在目录（项目根）。"""
+        return self._path.resolve().parent if self._path else Path.cwd()
+
+    def _resolve(self, p: str) -> Path:
+        """把配置里的路径解析为绝对路径：绝对路径原样，相对路径锚定 base_dir。"""
+        path = Path(p).expanduser()
+        return path if path.is_absolute() else self.base_dir / path
+
+    @property
     def notes_path(self) -> Path:
-        return Path(self.notes_dir)
+        return self._resolve(self.notes_dir)
 
     @property
     def papers_path(self) -> Path:
@@ -43,6 +53,11 @@ class Config:
     @property
     def daily_path(self) -> Path:
         return self.notes_path / self.daily_subdir
+
+    @property
+    def index_path(self) -> Path:
+        """FTS5 索引位置，锚定 base_dir 下的 .arxo/index.db。"""
+        return self.base_dir / ".arxo" / "index.db"
 
     def all_categories(self) -> list[str]:
         """所有领域的 arXiv 分类去重。"""
@@ -55,13 +70,19 @@ class Config:
 
 
 def find_config(explicit: str | None = None) -> Path:
-    """定位 config.yaml：显式路径 > 环境变量 ARXO_CONFIG > 当前目录。"""
+    """定位 config.yaml：显式路径 > 环境变量 ARXO_CONFIG > 从 cwd 向上逐级查找。"""
     if explicit:
         return Path(explicit)
     env = os.environ.get("ARXO_CONFIG")
     if env:
         return Path(env)
-    return Path.cwd() / DEFAULT_CONFIG_NAME
+    # 从当前目录向上找 config.yaml（像 git 找 .git），支持在子目录运行
+    cur = Path.cwd()
+    for d in [cur, *cur.parents]:
+        candidate = d / DEFAULT_CONFIG_NAME
+        if candidate.exists():
+            return candidate
+    return cur / DEFAULT_CONFIG_NAME  # 都没找到，回退当前目录（后续报错友好提示）
 
 
 def load_config(path: str | None = None) -> Config:

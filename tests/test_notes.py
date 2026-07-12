@@ -30,12 +30,20 @@ class TestNotePath(unittest.TestCase):
         cfg = Config(notes_dir="notes", papers_subdir="papers")
         p = Paper(paper_id="1", title="CoT-VLA: x", matched_domains=["VLA模型"])
         path = notes.note_path_for(p, cfg)
-        self.assertEqual(str(path), "notes/papers/VLA模型/CoT-VLA_x.md")
+        # 路径锚定 base_dir（绝对），只验证相对结构
+        self.assertTrue(str(path).endswith("notes/papers/VLA模型/CoT-VLA_x.md"))
+        self.assertTrue(path.is_absolute())
 
     def test_uncategorized(self):
         cfg = Config(notes_dir="notes", papers_subdir="papers")
         p = Paper(paper_id="1", title="x")
         self.assertIn("未分类", str(notes.note_path_for(p, cfg)))
+
+    def test_absolute_notes_dir_preserved(self):
+        # 用户配绝对路径（如外部 Obsidian vault）应原样保留
+        cfg = Config(notes_dir="/tmp/my_vault", papers_subdir="papers")
+        p = Paper(paper_id="1", title="x", matched_domains=["D"])
+        self.assertTrue(str(notes.note_path_for(p, cfg)).startswith("/tmp/my_vault/papers/D/"))
 
 
 class TestLinkKeywords(unittest.TestCase):

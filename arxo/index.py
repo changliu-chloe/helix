@@ -14,12 +14,10 @@ import yaml
 
 from .config import Config
 
-INDEX_DIR = ".arxo"
-INDEX_FILE = "index.db"
-
 
 def index_path(cfg: Config) -> Path:
-    return Path(INDEX_DIR) / INDEX_FILE
+    """FTS5 索引位置，锚定项目根（config 所在目录）下的 .arxo/index.db。"""
+    return cfg.index_path
 
 
 def _connect(cfg: Config) -> sqlite3.Connection:
