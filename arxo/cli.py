@@ -37,7 +37,55 @@ def cmd_status(args: argparse.Namespace) -> int:
 
 
 def cmd_search(args: argparse.Namespace) -> int:
-    return _not_implemented("search")
+    import json
+
+    from .config import load_config
+    from .score import score_papers
+    from .sources import arxiv
+
+    try:
+        cfg = load_config(args.config)
+    except FileNotFoundError as e:
+        print(str(e), file=sys.stderr)
+        return 1
+
+    sources = [s.strip() for s in args.source.split(",") if s.strip()]
+    unsupported = [s for s in sources if s != "arxiv"]
+    if unsupported:
+        print(f"[arxo] 来源 {unsupported} 暂未实现（迭代 4 加入 s2/dblp），本次仅用 arxiv", file=sys.stderr)
+
+    try:
+        if args.query:
+            print(f"[arxo] 关键词检索 arXiv：{args.query}", file=sys.stderr)
+            keywords = [k.strip() for k in args.query.split(",") if k.strip()]
+            papers = arxiv.search_by_keywords(keywords, days=args.days, max_results=args.max_results)
+        else:
+            cats = cfg.all_categories()
+            if not cats:
+                print("[arxo] config 中没有任何 arXiv 分类，且未提供查询词", file=sys.stderr)
+                return 1
+            days = args.days if args.days is not None else 30
+            print(f"[arxo] 按 config 领域分类检索 arXiv（近 {days} 天）：{','.join(cats)}", file=sys.stderr)
+            papers = arxiv.search_by_categories(cats, days=days, max_results=args.max_results)
+    except RuntimeError as e:
+        print(str(e), file=sys.stderr)
+        return 1
+
+    print(f"[arxo] 抓取 {len(papers)} 篇，开始打分筛选", file=sys.stderr)
+    scored = score_papers(papers, cfg)
+    top = scored[: args.top_n]
+
+    output = {
+        "query": args.query or "",
+        "total_fetched": len(papers),
+        "total_scored": len(scored),
+        "top_papers": [p.to_dict() for p in top],
+    }
+    print(json.dumps(output, ensure_ascii=False, indent=2))
+
+    for i, p in enumerate(top, 1):
+        print(f"  {i}. [{p.score_final}] {p.title[:70]}", file=sys.stderr)
+    return 0
 
 
 def cmd_fetch(args: argparse.Namespace) -> int:
@@ -62,9 +110,11 @@ def build_parser() -> argparse.ArgumentParser:
     sp.set_defaults(func=cmd_status)
 
     sp = sub.add_parser("search", help="检索并打分论文（arxiv/s2/dblp）")
-    sp.add_argument("query", nargs="?", help="检索词（留空则按 config 领域检索）")
+    sp.add_argument("query", nargs="?", help="检索词（逗号分隔多词；留空则按 config 领域检索）")
     sp.add_argument("--source", default="arxiv", help="来源，逗号分隔：arxiv,s2,dblp")
     sp.add_argument("--top-n", type=int, default=10, help="返回条数")
+    sp.add_argument("--days", type=int, default=None, help="检索最近 N 天（关键词模式默认不限；分类模式默认 30）")
+    sp.add_argument("--max-results", type=int, default=200, help="从 arXiv 拉取的最大条数")
     sp.set_defaults(func=cmd_search)
 
     sp = sub.add_parser("fetch", help="抓取单篇论文全文/图片")
