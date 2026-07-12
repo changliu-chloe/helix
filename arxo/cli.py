@@ -93,7 +93,64 @@ def cmd_fetch(args: argparse.Namespace) -> int:
 
 
 def cmd_note(args: argparse.Namespace) -> int:
-    return _not_implemented("note")
+    import json
+
+    from . import notes as notes_mod
+    from .config import load_config
+    from .score import relevance_score
+
+    try:
+        cfg = load_config(args.config)
+    except FileNotFoundError as e:
+        print(str(e), file=sys.stderr)
+        return 1
+
+    if args.action == "new":
+        if not args.target:
+            print("[arxo] note new 需要 arXiv id，例如：arxo note new 2503.22020", file=sys.stderr)
+            return 1
+        from .sources import arxiv
+
+        try:
+            paper = arxiv.get_by_id(args.target)
+        except RuntimeError as e:
+            print(str(e), file=sys.stderr)
+            return 1
+        if paper is None:
+            print(f"[arxo] 未找到论文：{args.target}", file=sys.stderr)
+            return 1
+        # 用相关性判定归入哪个领域目录
+        _, domain, matched = relevance_score(paper, cfg.domains, cfg.excluded_keywords)
+        paper.matched_domains = [domain] if domain else []
+        paper.matched_keywords = matched
+        path, created = notes_mod.write_note(paper, cfg, overwrite=args.overwrite)
+        action = "已创建" if created else "已存在（跳过，可加 --overwrite）"
+        print(f"[arxo] {action}：{path}", file=sys.stderr)
+        print(str(path))
+        return 0
+
+    if args.action == "scan":
+        index = notes_mod.scan_notes(cfg)
+        print(json.dumps(index, ensure_ascii=False, indent=2))
+        print(f"[arxo] 扫描到 {len(index['notes'])} 篇笔记，{len(index['keyword_to_notes'])} 个关键词", file=sys.stderr)
+        return 0
+
+    if args.action == "link":
+        if not args.target:
+            print("[arxo] note link 需要文件路径，例如：arxo note link notes/papers/VLA/xxx.md", file=sys.stderr)
+            return 1
+        from pathlib import Path
+
+        target = Path(args.target)
+        if not target.exists():
+            print(f"[arxo] 文件不存在：{target}", file=sys.stderr)
+            return 1
+        index = notes_mod.scan_notes(cfg)
+        added = notes_mod.link_file(target, index["keyword_to_notes"])
+        print(f"[arxo] {target}: 新增 {added} 个 wikilink", file=sys.stderr)
+        return 0
+
+    return 2
 
 
 def cmd_index(args: argparse.Namespace) -> int:
@@ -121,9 +178,10 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("paper_id")
     sp.set_defaults(func=cmd_fetch)
 
-    sp = sub.add_parser("note", help="笔记：new/scan/link")
+    sp = sub.add_parser("note", help="笔记：new <id> / scan / link <file>")
     sp.add_argument("action", choices=["new", "scan", "link"])
-    sp.add_argument("target", nargs="?")
+    sp.add_argument("target", nargs="?", help="new: arXiv id；link: 笔记文件路径")
+    sp.add_argument("--overwrite", action="store_true", help="new: 覆盖已存在的笔记")
     sp.set_defaults(func=cmd_note)
 
     sp = sub.add_parser("index", help="FTS5 索引：build/search")

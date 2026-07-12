@@ -120,6 +120,14 @@ def search_by_categories(
     return parse_xml(_fetch(url))
 
 
+def get_by_id(arxiv_id: str) -> Paper | None:
+    """按 arXiv id 取单篇元数据。"""
+    arxiv_id = arxiv_id.strip()
+    url = f"{ARXIV_API}?{urllib.parse.urlencode({'id_list': arxiv_id, 'max_results': '1'})}"
+    papers = parse_xml(_fetch(url))
+    return papers[0] if papers else None
+
+
 def search_by_keywords(
     keywords: list[str],
     days: int | None = None,
