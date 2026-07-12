@@ -24,7 +24,12 @@ def cmd_init(args: argparse.Namespace) -> int:
         print(f"[arxo] {line}", file=sys.stderr)
     linked = sum(1 for x in logs if x.startswith("已链接"))
     print(f"[arxo] init 完成：新建 {linked} 个软链（scope={args.scope}）", file=sys.stderr)
-    print("[arxo] 现在可在支持 skill 的 agent 里用自然语言触发：search / deep-read / daily", file=sys.stderr)
+
+    from .init import list_skill_names
+
+    names = list_skill_names()
+    if names:
+        print(f"[arxo] 现在可在支持 skill 的 agent 里用自然语言触发：{' / '.join(names)}", file=sys.stderr)
     return 0
 
 

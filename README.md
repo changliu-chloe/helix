@@ -18,19 +18,22 @@ uv venv --python 3.13
 uv pip install -e .
 
 # 2. 启用自然语言触发（把 skills 软链到 .claude/skills/）
-arxo init                    # 项目级：仅本项目目录下的 Claude Code 生效
-# arxo init --scope global   # 或全局：任何目录都能触发（软链到 ~/.claude/skills/）
+uv run arxo init                    # 项目级：仅本项目目录下的 Claude Code 生效
+# uv run arxo init --scope global   # 或全局：任何目录都能触发（软链到 ~/.claude/skills/）
 ```
+
+> **怎么调用 arxo**：装在项目 venv 里、不在全局 PATH。推荐 `uv run arxo ...`（自动定位项目
+> venv，任意目录可用）；或先 `source .venv/bin/activate` 后直接 `arxo ...`；skills 里统一用 `uv run arxo`。
 
 `arxo init` 幂等，可反复执行；软链含本机绝对路径，已 gitignore，**每台机器 clone 后各自跑一次**。
 做完这步，就能在 Claude Code 等支持 skill 的 agent 里用自然语言触发 search / deep-read / daily，
-无需手敲命令。纯 CLI（`arxo search` 等）不依赖这步，随时可用。
+无需手敲命令。
 
 ## 快速开始
 
 ```bash
-arxo status                              # 查看配置与研究领域
-arxo search "vision language action" --top-n 5   # 检索并打分
+uv run arxo status                              # 查看配置与研究领域
+uv run arxo search "vision language action" --top-n 5   # 检索并打分
 ```
 
 先编辑 `config.yaml`，把 `research_domains` 换成你的关注方向。
@@ -56,9 +59,12 @@ arxo search "vision language action" --top-n 5   # 检索并打分
 `skills/` 下是给 coding agent（Claude Code 等）读的决策手册。CLI 干确定性活（检索/解析/索引），
 agent 负责需要 LLM 的深读与总结：
 
+- `skills/arxo/` — **总入口**：判断意图并路由到下面三个子流程（"读这篇论文 <id>"、"找些 X 论文"、"开启研究日"都先进这里）
 - `skills/search/` — 检索路由：本地 FTS vs 跨源检索
 - `skills/deep-read/` — 单篇深读：建骨架 → 读全文填充 → 链接 + 建索引
 - `skills/daily/` — 开启研究日：批量检索 → 推荐笔记 → top-N 深读
+
+`arxo init` 后即可在对话里自然语言触发，例如直接说「读这篇论文：2503.22020」。
 
 ## 配置
 

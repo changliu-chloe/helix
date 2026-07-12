@@ -20,6 +20,17 @@ def _link_scope_dir(scope: str) -> Path:
     return PROJECT_ROOT / ".claude" / "skills"
 
 
+def list_skill_names() -> list[str]:
+    """列出 skills/ 下所有含 SKILL.md 的 skill 名（总入口 arxo 排在最前）。"""
+    if not SKILLS_SRC.exists():
+        return []
+    names = [d.name for d in sorted(SKILLS_SRC.iterdir()) if d.is_dir() and (d / "SKILL.md").exists()]
+    if "arxo" in names:
+        names.remove("arxo")
+        names.insert(0, "arxo")
+    return names
+
+
 def link_skills(scope: str = "project") -> list[str]:
     """为每个 skill 建软链到 .claude/skills/<name>。返回操作日志。"""
     logs: list[str] = []
