@@ -39,6 +39,24 @@ class TestNotePath(unittest.TestCase):
         p = Paper(paper_id="1", title="x")
         self.assertIn("未分类", str(notes.note_path_for(p, cfg)))
 
+
+class TestWriteNote(unittest.TestCase):
+    def test_write_verifies_landed_and_no_overwrite(self):
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = Config(notes_dir=str(Path(tmp) / "notes"), papers_subdir="papers")
+            p = Paper(paper_id="1", title="Paper One", abstract="abc", matched_domains=["新方向X"])
+            path, created = notes.write_note(p, cfg)
+            self.assertTrue(created)
+            self.assertTrue(path.exists() and path.stat().st_size > 0)
+            self.assertIn("新方向X", str(path))  # 用指定方向归档
+            # 再写不覆盖
+            path2, created2 = notes.write_note(p, cfg)
+            self.assertFalse(created2)
+            self.assertEqual(path, path2)
+
     def test_absolute_notes_dir_preserved(self):
         # 用户配绝对路径（如外部 Obsidian vault）应原样保留
         cfg = Config(notes_dir="/tmp/my_vault", papers_subdir="papers")

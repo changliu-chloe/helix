@@ -17,7 +17,11 @@
 uv venv --python 3.13
 uv pip install -e .
 
-# 2. 启用自然语言触发（把 skills 软链到 .claude/skills/）
+# 2. 复制配置模板（config.yaml 含 API key，已 gitignore，不进版本控制）
+cp config.example.yaml config.yaml
+# 按需编辑 config.yaml：research_domains、semantic_scholar_api_key、mineru_api_key
+
+# 3. 启用自然语言触发（把 skills 软链到 .claude/skills/）
 uv run arxo init                    # 项目级：仅本项目目录下的 Claude Code 生效
 # uv run arxo init --scope global   # 或全局：任何目录都能触发（软链到 ~/.claude/skills/）
 ```

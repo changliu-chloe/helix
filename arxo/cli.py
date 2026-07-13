@@ -183,7 +183,10 @@ def cmd_fetch(args: argparse.Namespace) -> int:
     if paper is None:
         print(f"[arxo] 未找到论文：{arxiv_id}", file=sys.stderr)
         return 1
-    _, domain, _ = relevance_score(paper, cfg.domains, cfg.excluded_keywords)
+    if args.domain:
+        domain = args.domain
+    else:
+        _, domain, _ = relevance_score(paper, cfg.domains, cfg.excluded_keywords)
     assets = cfg.assets_path(domain or "未分类", arxiv_id)
     assets.mkdir(parents=True, exist_ok=True)
 
@@ -256,11 +259,18 @@ def cmd_note(args: argparse.Namespace) -> int:
         if paper is None:
             print(f"[arxo] 未找到论文：{args.target}", file=sys.stderr)
             return 1
-        # 用相关性判定归入哪个领域目录
-        _, domain, matched = relevance_score(paper, cfg.domains, cfg.excluded_keywords)
+        # 领域归属：显式 --domain 优先（agent 可指定 config 里没有的新方向）；否则按相关性自动判定
+        if args.domain:
+            domain, matched = args.domain, []
+        else:
+            _, domain, matched = relevance_score(paper, cfg.domains, cfg.excluded_keywords)
         paper.matched_domains = [domain] if domain else []
         paper.matched_keywords = matched
-        path, created = notes_mod.write_note(paper, cfg, overwrite=args.overwrite)
+        try:
+            path, created = notes_mod.write_note(paper, cfg, overwrite=args.overwrite)
+        except OSError as e:
+            print(f"[arxo] {e}", file=sys.stderr)
+            return 1
         action = "已创建" if created else "已存在（跳过，可加 --overwrite）"
         print(f"[arxo] {action}：{path}", file=sys.stderr)
         print(str(path))
@@ -357,12 +367,14 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("paper_id", help="arXiv id，如 2503.22020")
     sp.add_argument("--figures-only", action="store_true", help="只抽高清图，不解析全文")
     sp.add_argument("--no-mineru", action="store_true", help="不调 MinerU 云端（离线，仅抽图）")
+    sp.add_argument("--domain", help="指定研究方向（assets 归档目录），与 note new --domain 保持一致")
     sp.set_defaults(func=cmd_fetch)
 
     sp = sub.add_parser("note", help="笔记：new <id> / scan / link <file>")
     sp.add_argument("action", choices=["new", "scan", "link"])
     sp.add_argument("target", nargs="?", help="new: arXiv id；link: 笔记文件路径")
     sp.add_argument("--overwrite", action="store_true", help="new: 覆盖已存在的笔记")
+    sp.add_argument("--domain", help="new: 指定研究方向（归档目录），可用 config 里没有的新方向；留空则自动判定")
     sp.set_defaults(func=cmd_note)
 
     sp = sub.add_parser("index", help="FTS5 索引：build / search <query>")

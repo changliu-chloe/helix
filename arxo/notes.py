@@ -146,12 +146,19 @@ def build_note_skeleton(paper: Paper, lang: str = "zh") -> str:
 
 
 def write_note(paper: Paper, cfg: Config, overwrite: bool = False) -> tuple[Path, bool]:
-    """写入单篇笔记骨架。返回 (路径, 是否新建)。已存在且未 overwrite 则跳过。"""
+    """写入单篇笔记骨架。返回 (路径, 是否新建)。已存在且未 overwrite 则跳过。
+
+    写入后校验文件确实落盘且非空，否则抛 OSError——杜绝"报告成功却没写入"。
+    """
     path = note_path_for(paper, cfg)
     if path.exists() and not overwrite:
         return path, False
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(build_note_skeleton(paper, cfg.language), encoding="utf-8")
+    content = build_note_skeleton(paper, cfg.language)
+    path.write_text(content, encoding="utf-8")
+    # 落盘校验：文件必须存在且大小与写入内容一致
+    if not path.exists() or path.stat().st_size == 0:
+        raise OSError(f"笔记写入失败，文件未落盘：{path}")
     return path, True
 
 
