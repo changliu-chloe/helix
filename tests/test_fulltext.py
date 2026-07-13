@@ -63,6 +63,28 @@ class TestMineruGating(unittest.TestCase):
         self.assertIn("api_key", str(ctx.exception))
 
 
+class TestMineruCliLocate(unittest.TestCase):
+    def test_prefers_sibling_of_python(self):
+        # CLI 与当前解释器同目录时应优先返回该路径（不依赖 PATH）
+        from arxo.sources import mineru_client
+
+        with tempfile.TemporaryDirectory() as tmp:
+            fake_bin = Path(tmp) / "bin"
+            fake_bin.mkdir()
+            cli = fake_bin / mineru_client.MINERU_CLI
+            cli.write_text("#!/bin/sh\n")
+            with mock.patch.object(mineru_client.sys, "executable", str(fake_bin / "python")):
+                self.assertEqual(mineru_client._find_cli(), str(cli))
+
+    def test_falls_back_to_path(self):
+        from arxo.sources import mineru_client
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch.object(mineru_client.sys, "executable", str(Path(tmp) / "python")), \
+                 mock.patch.object(mineru_client.shutil, "which", return_value="/usr/bin/mineru-open-api"):
+                self.assertEqual(mineru_client._find_cli(), "/usr/bin/mineru-open-api")
+
+
 class TestAssetsPath(unittest.TestCase):
     def test_assets_path_structure(self):
         cfg = Config(notes_dir="notes", papers_subdir="papers", _path=Path("/proj/config.yaml"))

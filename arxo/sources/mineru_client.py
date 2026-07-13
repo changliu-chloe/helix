@@ -9,10 +9,23 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 MINERU_CLI = "mineru-open-api"
 DEFAULT_TIMEOUT = 600  # 秒；云端解析 + 轮询下载
+
+
+def _find_cli() -> str | None:
+    """定位 mineru-open-api CLI：优先当前解释器所在目录（同 venv/bin），再退回 PATH。
+
+    arxo 常以 .venv/bin/arxo 直接调用，子进程 PATH 不含 .venv/bin，
+    单靠 shutil.which 会漏掉同 venv 里的 CLI。
+    """
+    sibling = Path(sys.executable).parent / MINERU_CLI
+    if sibling.exists():
+        return str(sibling)
+    return shutil.which(MINERU_CLI)
 
 
 def parse_pdf_cloud(
@@ -27,7 +40,7 @@ def parse_pdf_cloud(
 
     失败（未装 CLI / 网络 / 非零退出）抛 RuntimeError，由上层回退。
     """
-    cli = shutil.which(MINERU_CLI)
+    cli = _find_cli()
     if cli is None:
         raise RuntimeError(f"未找到 {MINERU_CLI} CLI，安装：uv pip install 'arxo[fulltext]'")
 
