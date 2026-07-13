@@ -27,10 +27,24 @@ class Config:
     papers_subdir: str = "papers"
     daily_subdir: str = "daily"
     semantic_scholar_api_key: str = ""
+    mineru_api_key: str = ""
     score_weights: dict[str, float] = field(default_factory=dict)
     excluded_keywords: list[str] = field(default_factory=list)
     domains: list[Domain] = field(default_factory=list)
     _path: Path | None = None
+
+    @property
+    def mineru_key(self) -> str:
+        """MinerU key：config 优先，其次环境变量 MINERU_API_KEY。"""
+        return self.mineru_api_key or os.environ.get("MINERU_API_KEY", "")
+
+    def assets_path(self, domain: str, arxiv_id: str) -> Path:
+        """单篇论文的资产目录：notes/papers/<领域>/assets/<id>/。"""
+        import re as _re
+
+        safe_domain = _re.sub(r'[ /\\:*?"<>|]+', "_", domain or "未分类").strip("_") or "未分类"
+        safe_id = arxiv_id.replace("/", "_")
+        return self.papers_path / safe_domain / "assets" / safe_id
 
     @property
     def base_dir(self) -> Path:
@@ -111,6 +125,7 @@ def load_config(path: str | None = None) -> Config:
         papers_subdir=raw.get("papers_subdir", "papers"),
         daily_subdir=raw.get("daily_subdir", "daily"),
         semantic_scholar_api_key=raw.get("semantic_scholar_api_key", "") or "",
+        mineru_api_key=raw.get("mineru_api_key", "") or "",
         score_weights=dict(raw.get("score_weights") or {}),
         excluded_keywords=list(raw.get("excluded_keywords") or []),
         domains=domains,

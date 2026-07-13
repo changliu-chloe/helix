@@ -15,6 +15,8 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# 全文解析：MinerU 云端（arxo fetch 全文；不装也能用源码抽图那路）
+fulltext = ["mineru-open-api>=0.5.9"]
 # 向量检索（后续迭代再启用）
 vector = ["sentence-transformers", "numpy"]
 dev = ["pytest"]

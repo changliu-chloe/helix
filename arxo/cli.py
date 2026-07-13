@@ -160,7 +160,73 @@ def cmd_search(args: argparse.Namespace) -> int:
 
 
 def cmd_fetch(args: argparse.Namespace) -> int:
-    return _not_implemented("fetch")
+    import json
+
+    from .config import load_config
+    from .score import relevance_score
+    from .sources import arxiv, fulltext
+
+    try:
+        cfg = load_config(args.config)
+    except FileNotFoundError as e:
+        print(str(e), file=sys.stderr)
+        return 1
+
+    arxiv_id = args.paper_id.strip()
+
+    # 抓元数据，定领域 -> assets 目录
+    try:
+        paper = arxiv.get_by_id(arxiv_id)
+    except RuntimeError as e:
+        print(f"[arxo] {e}", file=sys.stderr)
+        return 1
+    if paper is None:
+        print(f"[arxo] 未找到论文：{arxiv_id}", file=sys.stderr)
+        return 1
+    _, domain, _ = relevance_score(paper, cfg.domains, cfg.excluded_keywords)
+    assets = cfg.assets_path(domain or "未分类", arxiv_id)
+    assets.mkdir(parents=True, exist_ok=True)
+
+    # 1. 源码包高清图
+    figures: list = []
+    try:
+        print(f"[arxo] 下载 arXiv 源码包提取高清图：{arxiv_id}", file=sys.stderr)
+        figures = fulltext.download_source_figures(arxiv_id, assets)
+        print(f"[arxo] 提取到 {len(figures)} 张源码图", file=sys.stderr)
+    except Exception as e:  # noqa: BLE001
+        print(f"[arxo] 源码图提取失败（跳过）：{e}", file=sys.stderr)
+
+    # 2. MinerU 全文（可选，无 key 或 --no-mineru 则跳过）
+    md_path = None
+    if not args.figures_only and not args.no_mineru:
+        key = cfg.mineru_key
+        if not key:
+            print("[arxo] 未配置 mineru_api_key，跳过全文解析（仅抽图 + 摘要）。"
+                  "配 config.yaml mineru_api_key 或环境变量 MINERU_API_KEY 可启用", file=sys.stderr)
+        else:
+            try:
+                cache = cfg.base_dir / ".arxo" / "cache"
+                print("[arxo] 下载 PDF 并调 MinerU 云端解析全文…", file=sys.stderr)
+                pdf = fulltext.download_pdf(arxiv_id, cache)
+                md_text, mineru_imgs = fulltext.mineru_parse(pdf, key, assets)
+                md_path = assets / "fulltext.md"
+                md_path.write_text(md_text, encoding="utf-8")
+                if not figures:  # 源码没图时用 MinerU 的图兜底
+                    figures = mineru_imgs
+                print(f"[arxo] 全文已存：{md_path}（{len(md_text)} 字符）", file=sys.stderr)
+            except RuntimeError as e:
+                print(f"[arxo] MinerU 全文解析失败（回退到摘要）：{e}", file=sys.stderr)
+
+    result = {
+        "arxiv_id": arxiv_id,
+        "domain": domain or "未分类",
+        "assets_dir": str(assets),
+        "fulltext": str(md_path) if md_path else None,
+        "figures": [str(f) for f in figures],
+    }
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    print(f"[arxo] fetch 完成：assets -> {assets}", file=sys.stderr)
+    return 0
 
 
 def cmd_note(args: argparse.Namespace) -> int:
@@ -287,8 +353,10 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--max-results", type=int, default=200, help="从 arXiv 拉取的最大条数")
     sp.set_defaults(func=cmd_search)
 
-    sp = sub.add_parser("fetch", help="抓取单篇论文全文/图片")
-    sp.add_argument("paper_id")
+    sp = sub.add_parser("fetch", help="抓取单篇论文全文（MinerU）+ 高清图（源码包）")
+    sp.add_argument("paper_id", help="arXiv id，如 2503.22020")
+    sp.add_argument("--figures-only", action="store_true", help="只抽高清图，不解析全文")
+    sp.add_argument("--no-mineru", action="store_true", help="不调 MinerU 云端（离线，仅抽图）")
     sp.set_defaults(func=cmd_fetch)
 
     sp = sub.add_parser("note", help="笔记：new <id> / scan / link <file>")

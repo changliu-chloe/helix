@@ -50,9 +50,10 @@ uv run arxo search "vision language action" --top-n 5   # 检索并打分
 | `arxo note link <file>` | 正文关键词自动 wikilink | ✅ |
 | `arxo index build` | 建/更新 FTS5 全文索引 | ✅ |
 | `arxo index search "<q>"` | 本地全文检索（bm25 + snippet） | ✅ |
-| `arxo fetch <id>` | 抓取全文/图片 | 计划中 |
+| `arxo fetch <id>` | 抓全文（MinerU）+ 高清图（源码包）到 assets/ | ✅ |
 
-`arxo index search --vector` 向量检索接口已预留，实现待后续（接 sentence-transformers）。
+`arxo fetch` 全文解析需 MinerU 云端 key（config `mineru_api_key`）+ `uv pip install 'arxo[fulltext]'`；
+不配 key 时仅抽高清图（离线可用 `--no-mineru`）。`arxo index search --vector` 向量检索接口已预留。
 
 ## Skills（供外部 agent 编排）
 

@@ -37,6 +37,9 @@ dependencies = [
 dev = [
     { name = "pytest" },
 ]
+fulltext = [
+    { name = "mineru-open-api" },
+]
 vector = [
     { name = "numpy" },
     { name = "sentence-transformers" },
@@ -44,13 +47,14 @@ vector = [
 
 [package.metadata]
 requires-dist = [
+    { name = "mineru-open-api", marker = "extra == 'fulltext'", specifier = ">=0.5.9" },
     { name = "numpy", marker = "extra == 'vector'" },
     { name = "pytest", marker = "extra == 'dev'" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "requests", specifier = ">=2.28" },
     { name = "sentence-transformers", marker = "extra == 'vector'" },
 ]
-provides-extras = ["vector", "dev"]
+provides-extras = ["fulltext", "vector", "dev"]
 
 [[package]]
 name = "certifi"
@@ -446,6 +450,19 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/d6/54/cfe61301667036ec958cb99bd3efefba235e65cdeb9c84d24a8293ba1d90/mdurl-0.1.2.tar.gz", hash = "sha256:bb413d29f5eea38f31dd4754dd7377d4465116fb207585f97bf925588687c1ba", size = 8729, upload-time = "2022-08-14T12:40:10.846Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/b3/38/89ba8ad64ae25be8de66a6d463314cf1eb366222074cfda9ee839c56a4b4/mdurl-0.1.2-py3-none-any.whl", hash = "sha256:84008a41e51615a49fc9966191ff91509e3c40b939176e643fd50a5c2196b8f8", size = 9979, upload-time = "2022-08-14T12:40:09.779Z" },
+]
+
+[[package]]
+name = "mineru-open-api"
+version = "0.5.9"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/50/04/0f00fbee5c2bd725e3b8399f0468f4f844d498d2558b7b94457a0733843f/mineru_open_api-0.5.9-py3-none-macosx_10_9_x86_64.whl", hash = "sha256:d4b8a3e192c4596b1ba7145d76726c6f9ae6eafd89d8d26a3d53ca236152ae64", size = 3278568, upload-time = "2026-04-10T13:54:41.827Z" },
+    { url = "https://files.pythonhosted.org/packages/fa/fe/fed0a4a208dfa95b70bf767c622279e47078ceeda017ae58e646bf147d71/mineru_open_api-0.5.9-py3-none-macosx_11_0_arm64.whl", hash = "sha256:d5f0eb005427841f7f4701307dadaf036466276c5db8a182bf63a410f630fd53", size = 3113219, upload-time = "2026-04-10T13:54:44.568Z" },
+    { url = "https://files.pythonhosted.org/packages/91/90/ba56b18055711384482c7980f9e46150402a263c87eb1b1822085446e281/mineru_open_api-0.5.9-py3-none-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:2a272118390543f7132dcab1d24df0d26932acb97ded9e7ea33f858a4fb90f15", size = 2865149, upload-time = "2026-04-10T13:54:48.54Z" },
+    { url = "https://files.pythonhosted.org/packages/11/c7/f7881ce32d8026b5a9380fedb32926346d034e4b00510dfd211062c554d3/mineru_open_api-0.5.9-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:274d68910a1c6002dc1f5c1c720e1c0020a9593f1d1adf5a18540809260d4189", size = 3142508, upload-time = "2026-04-10T13:54:51.223Z" },
+    { url = "https://files.pythonhosted.org/packages/2c/d4/9458347e4ea8bb1158299ee2a415d741d7e046ec6c3ee14db26b45561690/mineru_open_api-0.5.9-py3-none-win_amd64.whl", hash = "sha256:82530f626388290af218133889387b573368d68f862df28b1920653f0baea55d", size = 3235391, upload-time = "2026-04-10T13:54:54.725Z" },
+    { url = "https://files.pythonhosted.org/packages/31/02/810882e7511aa681c07e2dc2dc7fe600d3e684c487164e89347b4f8d0e63/mineru_open_api-0.5.9-py3-none-win_arm64.whl", hash = "sha256:da02585eef7d98c3441e30cc6acad07876445aca821951119cffa8f534475cc8", size = 2915231, upload-time = "2026-04-10T13:54:56.939Z" },
 ]
 
 [[package]]
