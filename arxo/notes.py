@@ -197,6 +197,17 @@ def extract_title_keywords(title: str) -> list[str]:
     return list(dict.fromkeys(keywords))
 
 
+def iter_note_files(papers_dir: Path):
+    """遍历真正的笔记 .md，跳过 assets/ 下的附属文件（fulltext.md 等）。"""
+    if not papers_dir.exists():
+        return
+    for md in papers_dir.rglob("*.md"):
+        rel = md.relative_to(papers_dir)
+        if "assets" in rel.parts:  # papers/<方向>/assets/<id>/*.md 是附属，非笔记
+            continue
+        yield md
+
+
 def scan_notes(cfg: Config) -> dict:
     """扫描 papers 目录，返回 {notes:[...], keyword_to_notes:{kw:[path]}}。"""
     papers_dir = cfg.papers_path
@@ -211,7 +222,7 @@ def scan_notes(cfg: Config) -> dict:
     if not papers_dir.exists():
         return {"notes": [], "keyword_to_notes": {}}
 
-    for md in papers_dir.rglob("*.md"):
+    for md in iter_note_files(papers_dir):
         try:
             content = md.read_text(encoding="utf-8", errors="replace")
         except OSError:

@@ -52,6 +52,10 @@ class TestBuildAndSearch(unittest.TestCase):
         (papers / "b.md").write_text(
             "---\ntitle: Efficient VLA\n---\n## 摘要\n\nefficient model compression\n", encoding="utf-8"
         )
+        # assets 下的附属文件（fulltext.md），不应被当成笔记索引
+        att = papers / "assets" / "2503.22020"
+        att.mkdir(parents=True)
+        (att / "fulltext.md").write_text("# 全文附属\n\nchain of thought robot compression\n", encoding="utf-8")
         # 索引 db 放到临时目录，避免污染仓库
         self._patch = mock.patch.object(index, "index_path", lambda cfg: base / ".arxo" / "index.db")
         self._patch.start()
@@ -62,10 +66,17 @@ class TestBuildAndSearch(unittest.TestCase):
 
     def test_build_and_search(self):
         count, _ = index.build(self.cfg)
-        self.assertEqual(count, 2)
+        self.assertEqual(count, 2)  # 2 篇真笔记，assets/fulltext.md 被跳过
         hits = index.search(self.cfg, "chain thought")
         self.assertEqual(len(hits), 1)
         self.assertEqual(hits[0]["title"], "CoT-VLA Reasoning")
+
+    def test_assets_md_excluded(self):
+        index.build(self.cfg)
+        # 附属 fulltext.md 含 compression，但不应作为独立命中项出现
+        hits = index.search(self.cfg, "compression")
+        paths = [h["path"] for h in hits]
+        self.assertFalse(any("assets" in p for p in paths))
 
     def test_search_or_matches_both(self):
         index.build(self.cfg)

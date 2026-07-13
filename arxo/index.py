@@ -63,7 +63,9 @@ def build(cfg: Config) -> tuple[int, str]:
         )
         count = 0
         if papers_dir.exists():
-            for md in papers_dir.rglob("*.md"):
+            from .notes import iter_note_files
+
+            for md in iter_note_files(papers_dir):
                 try:
                     content = md.read_text(encoding="utf-8", errors="replace")
                 except OSError:
