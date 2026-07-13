@@ -161,6 +161,7 @@ def cmd_search(args: argparse.Namespace) -> int:
 
 def cmd_fetch(args: argparse.Namespace) -> int:
     import json
+    from pathlib import Path
 
     from .config import load_config
     from .score import relevance_score
@@ -190,17 +191,18 @@ def cmd_fetch(args: argparse.Namespace) -> int:
     assets = cfg.assets_path(domain or "未分类", arxiv_id)
     assets.mkdir(parents=True, exist_ok=True)
 
-    # 1. 源码包高清图
-    figures: list = []
+    # 1. 源码包高清图（存档用，多为 pdf 矢量图，不用于 markdown 内联）
+    source_figures: list = []
     try:
         print(f"[arxo] 下载 arXiv 源码包提取高清图：{arxiv_id}", file=sys.stderr)
-        figures = fulltext.download_source_figures(arxiv_id, assets)
-        print(f"[arxo] 提取到 {len(figures)} 张源码图", file=sys.stderr)
+        source_figures = fulltext.download_source_figures(arxiv_id, assets)
+        print(f"[arxo] 提取到 {len(source_figures)} 张源码高清图（存档）", file=sys.stderr)
     except Exception as e:  # noqa: BLE001
         print(f"[arxo] 源码图提取失败（跳过）：{e}", file=sys.stderr)
 
-    # 2. MinerU 全文（可选，无 key 或 --no-mineru 则跳过）
+    # 2. MinerU 全文 + 可渲染插图（jpg，供笔记内联）
     md_path = None
+    rendered_images: list = []
     if not args.figures_only and not args.no_mineru:
         key = cfg.mineru_key
         if not key:
@@ -211,21 +213,30 @@ def cmd_fetch(args: argparse.Namespace) -> int:
                 cache = cfg.base_dir / ".arxo" / "cache"
                 print("[arxo] 下载 PDF 并调 MinerU 云端解析全文…", file=sys.stderr)
                 pdf = fulltext.download_pdf(arxiv_id, cache)
-                md_text, mineru_imgs = fulltext.mineru_parse(pdf, key, assets)
+                md_text, rendered_images = fulltext.mineru_parse(pdf, key, assets)
                 md_path = assets / "fulltext.md"
                 md_path.write_text(md_text, encoding="utf-8")
-                if not figures:  # 源码没图时用 MinerU 的图兜底
-                    figures = mineru_imgs
-                print(f"[arxo] 全文已存：{md_path}（{len(md_text)} 字符）", file=sys.stderr)
+                print(f"[arxo] 全文已存：{md_path}（{len(md_text)} 字符），"
+                      f"可渲染插图 {len(rendered_images)} 张", file=sys.stderr)
             except RuntimeError as e:
                 print(f"[arxo] MinerU 全文解析失败（回退到摘要）：{e}", file=sys.stderr)
+
+    def _rel(p) -> str:
+        """相对 assets 目录的路径，便于笔记内联引用。"""
+        try:
+            return str(Path(p).relative_to(assets))
+        except ValueError:
+            return str(p)
 
     result = {
         "arxiv_id": arxiv_id,
         "domain": domain or "未分类",
         "assets_dir": str(assets),
         "fulltext": str(md_path) if md_path else None,
-        "figures": [str(f) for f in figures],
+        # 笔记内联用这套（可渲染 jpg，相对 assets 的路径如 images/fig1.jpg）
+        "rendered_images": [_rel(p) for p in rendered_images],
+        # 高清存档（多为 pdf，不建议内联渲染）
+        "source_figures": [_rel(p) for p in source_figures],
     }
     print(json.dumps(result, ensure_ascii=False, indent=2))
     print(f"[arxo] fetch 完成：assets -> {assets}", file=sys.stderr)

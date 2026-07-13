@@ -36,9 +36,13 @@ uv run arxo note new <arxiv_id> --domain "<第2步确定的方向>"
 ```bash
 uv run arxo fetch <arxiv_id> --domain "<同上方向>"
 ```
-- 输出 JSON：`assets_dir`（资产目录）、`fulltext`（MinerU 转的全文 markdown 路径，可能为 null）、`figures`（高清图清单）
+- 输出 JSON：
+  - `assets_dir`：资产目录
+  - `fulltext`：MinerU 转的全文 markdown 路径（可能为 null）
+  - `rendered_images`：**可渲染插图**清单（jpg，相对 assets 的路径如 `images/fig1.jpg`）——笔记内联用这套
+  - `source_figures`：源码高清图（多为 pdf 矢量图，**存档用，不要内联到笔记**，标准 markdown 预览渲染不出 pdf）
 - 全文和图存在 `notes/papers/<领域>/assets/<id>/`
-- **读全文**：优先读 `assets_dir/fulltext.md`（MinerU 转的完整正文），重点抓研究问题、方法、关键实验、结论、局限
+- **读全文**：优先读 `assets_dir/fulltext.md`（MinerU 转的完整正文）。正文里已内联 `![](images/figN.jpg)`，**每张图紧挨其图注**（如 `Figure 1. ...`）——据此判断每张图讲什么
 - 若 `fulltext` 为 null（没配 mineru_api_key 或解析失败）：退回读骨架里的摘要 + `pdf_url`，并在笔记注明"基于摘要"
 - 离线或只要图：`uv run arxo fetch <id> --no-mineru`
 
@@ -51,12 +55,14 @@ uv run arxo fetch <arxiv_id> --domain "<同上方向>"
 - **批判性分析**：创新点、优势、局限、适用场景，以及你的判断
 - **相关工作**：用 `[[wikilink]]` 链接库里已有的相关笔记
 
-**插图**：从第 4 步 `figures` 清单里挑**真正有助于说明的**图（通常是架构图 method/teaser、关键结果图 ablation/rollout），在对应小节用 Obsidian 嵌入语法插入：
+**插图**：从 `rendered_images`（可渲染 jpg）里挑**真正有助于说明的**图，用**标准 markdown 语法**插入对应小节：
 ```
-![[assets/<id>/method.png]]
+![Figure 1: 方法总览](assets/<id>/images/fig1.jpg)
 ```
-- 图名有含义（method/teaser/ablation…），按名选图，别把所有图都塞进去
-- 源码图常是 `.pdf` 矢量图，Obsidian 也能嵌入；优先选 `.png`
+- **必须用标准 `![](路径)` 语法，不要用 Obsidian 的 `![[...]]`**——后者在 VSCode/GitHub 等标准 markdown 预览里渲染不出来
+- **路径前缀 `assets/<id>/`**：笔记在 `notes/papers/<方向>/`，图在其下 `assets/<id>/images/`，所以从笔记看相对路径是 `assets/<id>/images/figN.jpg`
+- **只用 `rendered_images` 里的 jpg**，别引用 `source_figures` 的 `.pdf`（标准预览渲染不出 pdf）
+- 怎么选图：读 `fulltext.md`，每张 `images/figN.jpg` 紧挨其图注，据此挑架构图/关键结果图，别把所有图都塞进去
 - 在图下方一句话说明它讲了什么
 
 保留 frontmatter 不动。语言跟随 config.yaml 的 `language`（zh/en）。

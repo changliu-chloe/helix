@@ -63,6 +63,45 @@ class TestMineruGating(unittest.TestCase):
         self.assertIn("api_key", str(ctx.exception))
 
 
+class TestRenameImages(unittest.TestCase):
+    def test_sequential_rename_and_rewrite(self):
+        from arxo.sources import mineru_client
+
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            imgs = base / "images"
+            imgs.mkdir()
+            # 两张被引用的图 + 一张未引用的孤儿图
+            (imgs / "aaa.jpg").write_bytes(b"x")
+            (imgs / "bbb.jpg").write_bytes(b"y")
+            (imgs / "orphan.jpg").write_bytes(b"z")  # 正文不引用
+            md = (
+                "# T\n\n![](images/bbb.jpg)\nFigure 1\n\n"
+                "![](images/aaa.jpg)\nFigure 2\n\n![](images/bbb.jpg) again\n"
+                "![](https://x.com/z.jpg) 外链不动\n"
+            )
+            new_md, renamed = mineru_client.rename_images_sequentially(md, base)
+            # bbb 先出现 -> fig1；aaa -> fig2
+            self.assertIn("images/fig1.jpg", new_md)
+            self.assertIn("images/fig2.jpg", new_md)
+            self.assertNotIn("bbb.jpg", new_md)
+            self.assertNotIn("aaa.jpg", new_md)
+            self.assertIn("https://x.com/z.jpg", new_md)  # 外链保留
+            self.assertEqual({p.name for p in renamed}, {"fig1.jpg", "fig2.jpg"})
+            self.assertTrue((imgs / "fig1.jpg").exists())
+            self.assertFalse((imgs / "orphan.jpg").exists())  # 孤儿图被清理
+            self.assertEqual({p.name for p in imgs.iterdir()}, {"fig1.jpg", "fig2.jpg"})
+
+    def test_no_images_noop(self):
+        from arxo.sources import mineru_client
+
+        with tempfile.TemporaryDirectory() as tmp:
+            md = "# T\n\n纯文字，无图\n"
+            new_md, renamed = mineru_client.rename_images_sequentially(md, Path(tmp))
+            self.assertEqual(new_md, md)
+            self.assertEqual(renamed, [])
+
+
 class TestMineruCliLocate(unittest.TestCase):
     def test_prefers_sibling_of_python(self):
         # CLI 与当前解释器同目录时应优先返回该路径（不依赖 PATH）
