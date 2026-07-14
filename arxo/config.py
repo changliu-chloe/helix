@@ -21,16 +21,45 @@ class Domain:
 
 
 @dataclass
+class HardwareProfile:
+    """一台/一类可复现机器的硬件档。复现方案据此判断模型装不装得下。"""
+
+    name: str                       # 档名，如 a100-40g / h20-96g
+    gpu_model: str = ""             # GPU 型号，如 A100-40GB / H20
+    vram_gb: float = 0.0            # 单卡显存（GB）
+    num_gpus: int = 1               # 卡数
+    interconnect: str = ""          # 互联，如 NVLink / PCIe（影响 TP 可行性）
+    notes: str = ""                 # 备注
+
+    @property
+    def total_vram_gb(self) -> float:
+        return self.vram_gb * max(1, self.num_gpus)
+
+    def to_dict(self) -> dict:
+        return {
+            "name": self.name,
+            "gpu_model": self.gpu_model,
+            "vram_gb": self.vram_gb,
+            "num_gpus": self.num_gpus,
+            "interconnect": self.interconnect,
+            "notes": self.notes,
+            "total_vram_gb": self.total_vram_gb,
+        }
+
+
+@dataclass
 class Config:
     language: str = "zh"
     notes_dir: str = "notes"
     papers_subdir: str = "papers"
     daily_subdir: str = "daily"
+    repro_dir: str = "repro"
     semantic_scholar_api_key: str = ""
     mineru_api_key: str = ""
     score_weights: dict[str, float] = field(default_factory=dict)
     excluded_keywords: list[str] = field(default_factory=list)
     domains: list[Domain] = field(default_factory=list)
+    hardware_profiles: list[HardwareProfile] = field(default_factory=list)
     _path: Path | None = None
 
     @property
@@ -67,6 +96,27 @@ class Config:
     @property
     def daily_path(self) -> Path:
         return self.notes_path / self.daily_subdir
+
+    @property
+    def repro_path(self) -> Path:
+        """复现工作区根目录，与 notes_path 平级，锚定 base_dir。"""
+        return self._resolve(self.repro_dir)
+
+    def repro_workspace_path(self, domain: str, short_name: str, draft: bool = False) -> Path:
+        """单篇论文的复现工作区：repro/<方向>/<短名>/（--draft 时落 draft_notes/）。"""
+        import re as _re
+
+        def _safe(s: str, fallback: str) -> str:
+            return _re.sub(r'[ /\\:*?"<>|]+', "_", s or fallback).strip("_") or fallback
+
+        root = self._resolve("draft_notes") if draft else self.repro_path
+        return root / _safe(domain, "未分类") / _safe(short_name, "untitled")
+
+    def find_profile(self, name: str) -> HardwareProfile | None:
+        for p in self.hardware_profiles:
+            if p.name == name:
+                return p
+        return None
 
     @property
     def index_path(self) -> Path:
@@ -119,15 +169,31 @@ def load_config(path: str | None = None) -> Config:
             )
         )
 
+    profiles = []
+    for name, spec in (raw.get("hardware_profiles") or {}).items():
+        spec = spec or {}
+        profiles.append(
+            HardwareProfile(
+                name=name,
+                gpu_model=str(spec.get("gpu_model", "") or ""),
+                vram_gb=float(spec.get("vram_gb", 0) or 0),
+                num_gpus=int(spec.get("num_gpus", 1) or 1),
+                interconnect=str(spec.get("interconnect", "") or ""),
+                notes=str(spec.get("notes", "") or ""),
+            )
+        )
+
     return Config(
         language=raw.get("language", "zh"),
         notes_dir=raw.get("notes_dir", "notes"),
         papers_subdir=raw.get("papers_subdir", "papers"),
         daily_subdir=raw.get("daily_subdir", "daily"),
+        repro_dir=raw.get("repro_dir", "repro"),
         semantic_scholar_api_key=raw.get("semantic_scholar_api_key", "") or "",
         mineru_api_key=raw.get("mineru_api_key", "") or "",
         score_weights=dict(raw.get("score_weights") or {}),
         excluded_keywords=list(raw.get("excluded_keywords") or []),
         domains=domains,
+        hardware_profiles=profiles,
         _path=cfg_path,
     )
