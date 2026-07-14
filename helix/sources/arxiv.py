@@ -37,7 +37,7 @@ def _fetch(url: str, max_retries: int = 3, timeout: int = 60) -> str:
     last_err: Exception | None = None
     for attempt in range(max_retries):
         try:
-            req = urllib.request.Request(url, headers={"User-Agent": "arxo/0.1"})
+            req = urllib.request.Request(url, headers={"User-Agent": "helix/0.1"})
             with urllib.request.urlopen(req, timeout=timeout) as resp:
                 return resp.read().decode("utf-8")
         except Exception as e:  # noqa: BLE001 — 网络异常统一重试

@@ -3,10 +3,10 @@
 import unittest
 from unittest import mock
 
-from arxo.sources import semantic_scholar as s2
-from arxo.sources import dblp
-from arxo.models import Paper
-from arxo.cli import _dedup_papers
+from helix.sources import semantic_scholar as s2
+from helix.sources import dblp
+from helix.models import Paper
+from helix.cli import _dedup_papers
 
 
 S2_SAMPLE = {

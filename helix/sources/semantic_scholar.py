@@ -23,7 +23,7 @@ KEYED_RATE_LIMIT_WAIT = 5        # 有 key 时 429 等待更短
 
 
 def _request(url: str, api_key: str = "", max_retries: int = 4, timeout: int = 20) -> dict:
-    headers = {"User-Agent": "arxo/0.1"}
+    headers = {"User-Agent": "helix/0.1"}
     if api_key:
         headers["x-api-key"] = api_key
     rate_wait = KEYED_RATE_LIMIT_WAIT if api_key else NO_KEY_RATE_LIMIT_WAIT

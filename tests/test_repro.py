@@ -4,8 +4,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from arxo import repro
-from arxo.config import Config, HardwareProfile, load_config
+from helix import repro
+from helix.config import Config, HardwareProfile, load_config
 
 
 class TestEstimateVram(unittest.TestCase):

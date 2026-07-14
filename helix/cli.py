@@ -1,4 +1,4 @@
-"""arxo 命令行入口。子命令：search / fetch / note / index / status。
+"""helix 命令行入口。子命令：search / fetch / note / index / status。
 
 迭代 0 仅搭骨架：status 可用，其余子命令占位（后续迭代填充）。
 """
@@ -12,7 +12,7 @@ from . import __version__
 
 
 def _not_implemented(name: str) -> int:
-    print(f"[arxo] 子命令 '{name}' 尚未实现（将在后续迭代中加入）", file=sys.stderr)
+    print(f"[helix] 子命令 '{name}' 尚未实现（将在后续迭代中加入）", file=sys.stderr)
     return 2
 
 
@@ -21,15 +21,15 @@ def cmd_init(args: argparse.Namespace) -> int:
 
     logs = link_skills(scope=args.scope)
     for line in logs:
-        print(f"[arxo] {line}", file=sys.stderr)
+        print(f"[helix] {line}", file=sys.stderr)
     linked = sum(1 for x in logs if x.startswith("已链接"))
-    print(f"[arxo] init 完成：新建 {linked} 个软链（scope={args.scope}）", file=sys.stderr)
+    print(f"[helix] init 完成：新建 {linked} 个软链（scope={args.scope}）", file=sys.stderr)
 
     from .init import list_skill_names
 
     names = list_skill_names()
     if names:
-        print(f"[arxo] 现在可在支持 skill 的 agent 里用自然语言触发：{' / '.join(names)}", file=sys.stderr)
+        print(f"[helix] 现在可在支持 skill 的 agent 里用自然语言触发：{' / '.join(names)}", file=sys.stderr)
     return 0
 
 
@@ -42,7 +42,7 @@ def cmd_status(args: argparse.Namespace) -> int:
         print(str(e), file=sys.stderr)
         return 1
 
-    print(f"arxo v{__version__}")
+    print(f"helix v{__version__}")
     print(f"配置文件   : {cfg._path}")
     print(f"语言       : {cfg.language}")
     print(f"笔记库     : {cfg.notes_path}")
@@ -94,7 +94,7 @@ def cmd_search(args: argparse.Namespace) -> int:
     known = {"arxiv", "s2", "dblp"}
     unknown = [s for s in sources if s not in known]
     if unknown:
-        print(f"[arxo] 未知来源 {unknown}，支持：arxiv,s2,dblp", file=sys.stderr)
+        print(f"[helix] 未知来源 {unknown}，支持：arxiv,s2,dblp", file=sys.stderr)
         return 1
 
     papers: list = []
@@ -102,46 +102,46 @@ def cmd_search(args: argparse.Namespace) -> int:
         try:
             if src == "arxiv":
                 if args.query:
-                    print(f"[arxo] [arxiv] 关键词检索：{args.query}", file=sys.stderr)
+                    print(f"[helix] [arxiv] 关键词检索：{args.query}", file=sys.stderr)
                     kws = [k.strip() for k in args.query.split(",") if k.strip()]
                     got = arxiv.search_by_keywords(kws, days=args.days, max_results=args.max_results)
                 else:
                     cats = cfg.all_categories()
                     if not cats:
-                        print("[arxo] config 无 arXiv 分类且未提供查询词，跳过 arxiv", file=sys.stderr)
+                        print("[helix] config 无 arXiv 分类且未提供查询词，跳过 arxiv", file=sys.stderr)
                         got = []
                     else:
                         days = args.days if args.days is not None else 30
-                        print(f"[arxo] [arxiv] 按 config 分类检索（近 {days} 天）：{','.join(cats)}", file=sys.stderr)
+                        print(f"[helix] [arxiv] 按 config 分类检索（近 {days} 天）：{','.join(cats)}", file=sys.stderr)
                         got = arxiv.search_by_categories(cats, days=days, max_results=args.max_results)
             elif src == "s2":
                 from .sources import semantic_scholar
 
                 q = args.query or " ".join(cfg.domains[0].keywords[:3]) if cfg.domains else args.query
                 if not q:
-                    print("[arxo] s2 需要查询词或 config 领域，跳过 s2", file=sys.stderr)
+                    print("[helix] s2 需要查询词或 config 领域，跳过 s2", file=sys.stderr)
                     got = []
                 else:
-                    print(f"[arxo] [s2] 检索：{q}", file=sys.stderr)
+                    print(f"[helix] [s2] 检索：{q}", file=sys.stderr)
                     got = semantic_scholar.search(q, limit=args.max_results, api_key=cfg.semantic_scholar_api_key)
             else:  # dblp
                 from .sources import dblp
 
                 q = args.query or (" ".join(cfg.domains[0].keywords[:3]) if cfg.domains else "")
                 if not q:
-                    print("[arxo] dblp 需要查询词或 config 领域，跳过 dblp", file=sys.stderr)
+                    print("[helix] dblp 需要查询词或 config 领域，跳过 dblp", file=sys.stderr)
                     got = []
                 else:
-                    print(f"[arxo] [dblp] 检索：{q}", file=sys.stderr)
+                    print(f"[helix] [dblp] 检索：{q}", file=sys.stderr)
                     got = dblp.search(q, limit=args.max_results)
         except RuntimeError as e:
-            print(f"[arxo] [{src}] 失败（跳过）：{e}", file=sys.stderr)
+            print(f"[helix] [{src}] 失败（跳过）：{e}", file=sys.stderr)
             got = []
-        print(f"[arxo] [{src}] 拉回 {len(got)} 篇", file=sys.stderr)
+        print(f"[helix] [{src}] 拉回 {len(got)} 篇", file=sys.stderr)
         papers.extend(got)
 
     papers = _dedup_papers(papers)
-    print(f"[arxo] 合并去重后 {len(papers)} 篇，开始打分筛选", file=sys.stderr)
+    print(f"[helix] 合并去重后 {len(papers)} 篇，开始打分筛选", file=sys.stderr)
     scored = score_papers(papers, cfg)
     top = scored[: args.top_n]
 
@@ -179,10 +179,10 @@ def cmd_fetch(args: argparse.Namespace) -> int:
     try:
         paper = arxiv.get_by_id(arxiv_id)
     except RuntimeError as e:
-        print(f"[arxo] {e}", file=sys.stderr)
+        print(f"[helix] {e}", file=sys.stderr)
         return 1
     if paper is None:
-        print(f"[arxo] 未找到论文：{arxiv_id}", file=sys.stderr)
+        print(f"[helix] 未找到论文：{arxiv_id}", file=sys.stderr)
         return 1
     if args.domain:
         domain = args.domain
@@ -194,11 +194,11 @@ def cmd_fetch(args: argparse.Namespace) -> int:
     # 1. 源码包高清图（存档用，多为 pdf 矢量图，不用于 markdown 内联）
     source_figures: list = []
     try:
-        print(f"[arxo] 下载 arXiv 源码包提取高清图：{arxiv_id}", file=sys.stderr)
+        print(f"[helix] 下载 arXiv 源码包提取高清图：{arxiv_id}", file=sys.stderr)
         source_figures = fulltext.download_source_figures(arxiv_id, assets)
-        print(f"[arxo] 提取到 {len(source_figures)} 张源码高清图（存档）", file=sys.stderr)
+        print(f"[helix] 提取到 {len(source_figures)} 张源码高清图（存档）", file=sys.stderr)
     except Exception as e:  # noqa: BLE001
-        print(f"[arxo] 源码图提取失败（跳过）：{e}", file=sys.stderr)
+        print(f"[helix] 源码图提取失败（跳过）：{e}", file=sys.stderr)
 
     # 2. MinerU 全文 + 可渲染插图（jpg，供笔记内联）
     md_path = None
@@ -206,20 +206,20 @@ def cmd_fetch(args: argparse.Namespace) -> int:
     if not args.figures_only and not args.no_mineru:
         key = cfg.mineru_key
         if not key:
-            print("[arxo] 未配置 mineru_api_key，跳过全文解析（仅抽图 + 摘要）。"
+            print("[helix] 未配置 mineru_api_key，跳过全文解析（仅抽图 + 摘要）。"
                   "配 config.yaml mineru_api_key 或环境变量 MINERU_API_KEY 可启用", file=sys.stderr)
         else:
             try:
-                cache = cfg.base_dir / ".arxo" / "cache"
-                print("[arxo] 下载 PDF 并调 MinerU 云端解析全文…", file=sys.stderr)
+                cache = cfg.base_dir / ".helix" / "cache"
+                print("[helix] 下载 PDF 并调 MinerU 云端解析全文…", file=sys.stderr)
                 pdf = fulltext.download_pdf(arxiv_id, cache)
                 md_text, rendered_images = fulltext.mineru_parse(pdf, key, assets)
                 md_path = assets / "fulltext.md"
                 md_path.write_text(md_text, encoding="utf-8")
-                print(f"[arxo] 全文已存：{md_path}（{len(md_text)} 字符），"
+                print(f"[helix] 全文已存：{md_path}（{len(md_text)} 字符），"
                       f"可渲染插图 {len(rendered_images)} 张", file=sys.stderr)
             except RuntimeError as e:
-                print(f"[arxo] MinerU 全文解析失败（回退到摘要）：{e}", file=sys.stderr)
+                print(f"[helix] MinerU 全文解析失败（回退到摘要）：{e}", file=sys.stderr)
 
     def _rel(p) -> str:
         """相对 assets 目录的路径，便于笔记内联引用。"""
@@ -239,7 +239,7 @@ def cmd_fetch(args: argparse.Namespace) -> int:
         "source_figures": [_rel(p) for p in source_figures],
     }
     print(json.dumps(result, ensure_ascii=False, indent=2))
-    print(f"[arxo] fetch 完成：assets -> {assets}", file=sys.stderr)
+    print(f"[helix] fetch 完成：assets -> {assets}", file=sys.stderr)
     return 0
 
 
@@ -258,7 +258,7 @@ def cmd_note(args: argparse.Namespace) -> int:
 
     if args.action == "new":
         if not args.target:
-            print("[arxo] note new 需要 arXiv id，例如：arxo note new 2503.22020", file=sys.stderr)
+            print("[helix] note new 需要 arXiv id，例如：helix note new 2503.22020", file=sys.stderr)
             return 1
         from .sources import arxiv
 
@@ -268,7 +268,7 @@ def cmd_note(args: argparse.Namespace) -> int:
             print(str(e), file=sys.stderr)
             return 1
         if paper is None:
-            print(f"[arxo] 未找到论文：{args.target}", file=sys.stderr)
+            print(f"[helix] 未找到论文：{args.target}", file=sys.stderr)
             return 1
         # 领域归属：显式 --domain 优先（agent 可指定 config 里没有的新方向）；否则按相关性自动判定
         if args.domain:
@@ -280,32 +280,32 @@ def cmd_note(args: argparse.Namespace) -> int:
         try:
             path, created = notes_mod.write_note(paper, cfg, overwrite=args.overwrite)
         except OSError as e:
-            print(f"[arxo] {e}", file=sys.stderr)
+            print(f"[helix] {e}", file=sys.stderr)
             return 1
         action = "已创建" if created else "已存在（跳过，可加 --overwrite）"
-        print(f"[arxo] {action}：{path}", file=sys.stderr)
+        print(f"[helix] {action}：{path}", file=sys.stderr)
         print(str(path))
         return 0
 
     if args.action == "scan":
         index = notes_mod.scan_notes(cfg)
         print(json.dumps(index, ensure_ascii=False, indent=2))
-        print(f"[arxo] 扫描到 {len(index['notes'])} 篇笔记，{len(index['keyword_to_notes'])} 个关键词", file=sys.stderr)
+        print(f"[helix] 扫描到 {len(index['notes'])} 篇笔记，{len(index['keyword_to_notes'])} 个关键词", file=sys.stderr)
         return 0
 
     if args.action == "link":
         if not args.target:
-            print("[arxo] note link 需要文件路径，例如：arxo note link notes/papers/VLA/xxx.md", file=sys.stderr)
+            print("[helix] note link 需要文件路径，例如：helix note link notes/papers/VLA/xxx.md", file=sys.stderr)
             return 1
         from pathlib import Path
 
         target = Path(args.target)
         if not target.exists():
-            print(f"[arxo] 文件不存在：{target}", file=sys.stderr)
+            print(f"[helix] 文件不存在：{target}", file=sys.stderr)
             return 1
         index = notes_mod.scan_notes(cfg)
         added = notes_mod.link_file(target, index["keyword_to_notes"])
-        print(f"[arxo] {target}: 新增 {added} 个 wikilink", file=sys.stderr)
+        print(f"[helix] {target}: 新增 {added} 个 wikilink", file=sys.stderr)
         return 0
 
     return 2
@@ -325,12 +325,12 @@ def cmd_index(args: argparse.Namespace) -> int:
 
     if args.action == "build":
         count, msg = index_mod.build(cfg)
-        print(f"[arxo] {msg}", file=sys.stderr)
+        print(f"[helix] {msg}", file=sys.stderr)
         return 0 if count > 0 or "已索引" in msg else 1
 
     if args.action == "search":
         if not args.query:
-            print("[arxo] index search 需要查询词，例如：arxo index search 'VLA'", file=sys.stderr)
+            print("[helix] index search 需要查询词，例如：helix index search 'VLA'", file=sys.stderr)
             return 1
         try:
             if args.vector:
@@ -338,15 +338,15 @@ def cmd_index(args: argparse.Namespace) -> int:
             else:
                 results = index_mod.search(cfg, args.query, limit=args.limit)
         except NotImplementedError as e:
-            print(f"[arxo] {e}", file=sys.stderr)
+            print(f"[helix] {e}", file=sys.stderr)
             return 2
         except RuntimeError as e:
-            print(f"[arxo] {e}", file=sys.stderr)
+            print(f"[helix] {e}", file=sys.stderr)
             return 1
         print(json.dumps(results, ensure_ascii=False, indent=2))
         for i, r in enumerate(results, 1):
             print(f"  {i}. {r['title'][:60]}  ({r['path']})", file=sys.stderr)
-        print(f"[arxo] 命中 {len(results)} 篇", file=sys.stderr)
+        print(f"[helix] 命中 {len(results)} 篇", file=sys.stderr)
         return 0
 
     return 2
@@ -367,7 +367,7 @@ def cmd_repro(args: argparse.Namespace) -> int:
 
     if args.action == "vram":
         if not args.params:
-            print("[arxo] repro vram 需要 --params（十亿参数，如 --params 7 表示 7B）", file=sys.stderr)
+            print("[helix] repro vram 需要 --params（十亿参数，如 --params 7 表示 7B）", file=sys.stderr)
             return 1
         try:
             est = repro_mod.estimate_vram(
@@ -375,14 +375,14 @@ def cmd_repro(args: argparse.Namespace) -> int:
                 num_layers=args.layers, hidden=args.hidden, kv_dtype=args.kv_dtype,
             )
         except ValueError as e:
-            print(f"[arxo] {e}", file=sys.stderr)
+            print(f"[helix] {e}", file=sys.stderr)
             return 1
         # 指定 --profile 则只判那台，否则判 config 全部
         if args.profile:
             prof = cfg.find_profile(args.profile)
             if prof is None:
                 names = ", ".join(p.name for p in cfg.hardware_profiles) or "（无）"
-                print(f"[arxo] 未知硬件档 '{args.profile}'，config 已有：{names}", file=sys.stderr)
+                print(f"[helix] 未知硬件档 '{args.profile}'，config 已有：{names}", file=sys.stderr)
                 return 1
             fits = [repro_mod.fit_check(est, prof)]
         else:
@@ -391,7 +391,7 @@ def cmd_repro(args: argparse.Namespace) -> int:
         out = {"estimate": est.to_dict(), "fit": [f.to_dict() for f in fits]}
         print(json.dumps(out, ensure_ascii=False, indent=2))
         approx = "（KV 按经验架构近似）" if est.approximate else ""
-        print(f"[arxo] {args.params}B/{est.dtype} ctx={est.ctx} batch={est.batch} "
+        print(f"[helix] {args.params}B/{est.dtype} ctx={est.ctx} batch={est.batch} "
               f"→ 约 {est.total_gb:.1f}GB {approx}", file=sys.stderr)
         for f in fits:
             print(f"  - {f.profile}: {f.summary}", file=sys.stderr)
@@ -401,7 +401,7 @@ def cmd_repro(args: argparse.Namespace) -> int:
 
     if args.action == "new":
         if not args.target:
-            print("[arxo] repro new 需要笔记路径或 arXiv id", file=sys.stderr)
+            print("[helix] repro new 需要笔记路径或 arXiv id", file=sys.stderr)
             return 1
         # 解析 title / domain / note_rel：优先当作已存在的笔记文件，否则当 arXiv id
         title = domain = note_rel = None
@@ -424,7 +424,7 @@ def cmd_repro(args: argparse.Namespace) -> int:
                 print(str(e), file=sys.stderr)
                 return 1
             if paper is None:
-                print(f"[arxo] 未找到论文，也不是已存在笔记：{args.target}", file=sys.stderr)
+                print(f"[helix] 未找到论文，也不是已存在笔记：{args.target}", file=sys.stderr)
                 return 1
             title = paper.title
             domain = args.domain or "未分类"
@@ -437,13 +437,13 @@ def cmd_repro(args: argparse.Namespace) -> int:
                 draft=args.draft, overwrite=args.overwrite,
             )
         except OSError as e:
-            print(f"[arxo] {e}", file=sys.stderr)
+            print(f"[helix] {e}", file=sys.stderr)
             return 1
         result = {"workspace": str(ws), "created": created, "title": title, "domain": domain}
         print(json.dumps(result, ensure_ascii=False, indent=2))
         where = "draft_notes" if args.draft else "repro"
         msg = f"新建 {created}" if created else "已存在（跳过，可加 --overwrite）"
-        print(f"[arxo] 复现工作区（{where}）：{ws} — {msg}", file=sys.stderr)
+        print(f"[helix] 复现工作区（{where}）：{ws} — {msg}", file=sys.stderr)
         print(str(ws))
         return 0
 
@@ -451,9 +451,9 @@ def cmd_repro(args: argparse.Namespace) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="arxo", description="论文检索追踪 + 深读理解 CLI")
-    p.add_argument("--config", help="config.yaml 路径（默认当前目录或 $ARXO_CONFIG）")
-    p.add_argument("--version", action="version", version=f"arxo {__version__}")
+    p = argparse.ArgumentParser(prog="helix", description="论文检索追踪 + 深读理解 CLI")
+    p.add_argument("--config", help="config.yaml 路径（默认当前目录或 $HELIX_CONFIG）")
+    p.add_argument("--version", action="version", version=f"helix {__version__}")
     sub = p.add_subparsers(dest="command", required=True)
 
     sp = sub.add_parser("status", help="显示配置/库/索引状态")

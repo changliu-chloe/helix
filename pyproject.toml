@@ -3,9 +3,9 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "arxo"
+name = "helix"
 version = "0.1.0"
-description = "论文检索追踪 + 深读理解 CLI —— arXiv/S2/DBLP 检索、打分、Markdown 笔记、FTS5 索引"
+description = "人在环中的科研全流程助手 —— 读(检索/深读/追新) + 复现(实验规划) + 写(论文/毕设)"
 readme = "README.md"
 requires-python = ">=3.12"
 authors = [{ name = "changliu" }]
@@ -15,15 +15,15 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# 全文解析：MinerU 云端（arxo fetch 全文；不装也能用源码抽图那路）
+# 全文解析：MinerU 云端（helix fetch 全文；不装也能用源码抽图那路）
 fulltext = ["mineru-open-api>=0.5.9"]
 # 向量检索（后续迭代再启用）
 vector = ["sentence-transformers", "numpy"]
 dev = ["pytest"]
 
 [project.scripts]
-arxo = "arxo.cli:main"
+helix = "helix.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["arxo*"]
+include = ["helix*"]

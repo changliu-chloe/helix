@@ -1,4 +1,4 @@
-"""arxo init：把项目 skills 接入 Claude Code 的发现路径。
+"""helix init：把项目 skills 接入 Claude Code 的发现路径。
 
 创建 .claude/skills/ 下指向 skills/ 里各 skill 的软链，让外层 agent
 （Claude Code 等）能自然语言触发这些 skill。幂等、可重复执行。
@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-# 项目根 = 本文件的上两级（arxo/init.py -> arxo/ -> 项目根）
+# 项目根 = 本文件的上两级（helix/init.py -> helix/ -> 项目根）
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 SKILLS_SRC = PROJECT_ROOT / "skills"
 
@@ -21,13 +21,13 @@ def _link_scope_dir(scope: str) -> Path:
 
 
 def list_skill_names() -> list[str]:
-    """列出 skills/ 下所有含 SKILL.md 的 skill 名（总入口 arxo 排在最前）。"""
+    """列出 skills/ 下所有含 SKILL.md 的 skill 名（总入口 helix 排在最前）。"""
     if not SKILLS_SRC.exists():
         return []
     names = [d.name for d in sorted(SKILLS_SRC.iterdir()) if d.is_dir() and (d / "SKILL.md").exists()]
-    if "arxo" in names:
-        names.remove("arxo")
-        names.insert(0, "arxo")
+    if "helix" in names:
+        names.remove("helix")
+        names.insert(0, "helix")
     return names
 
 

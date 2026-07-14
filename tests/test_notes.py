@@ -2,9 +2,9 @@
 
 import unittest
 
-from arxo import notes
-from arxo.config import Config, Domain
-from arxo.models import Paper
+from helix import notes
+from helix.config import Config, Domain
+from helix.models import Paper
 
 
 class TestFilename(unittest.TestCase):

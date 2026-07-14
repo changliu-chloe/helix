@@ -1,11 +1,11 @@
-"""arxo init 软链单元测试。"""
+"""helix init 软链单元测试。"""
 
 import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
 
-from arxo import init
+from helix import init
 
 
 class TestLinkSkills(unittest.TestCase):

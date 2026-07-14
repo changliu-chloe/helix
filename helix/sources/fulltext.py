@@ -22,7 +22,7 @@ IMG_EXTS = {".png", ".jpg", ".jpeg", ".pdf", ".eps", ".svg"}
 
 
 def _download(url: str, timeout: int = 60) -> bytes:
-    req = urllib.request.Request(url, headers={"User-Agent": "arxo/0.1"})
+    req = urllib.request.Request(url, headers={"User-Agent": "helix/0.1"})
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         return resp.read()
 
@@ -117,7 +117,7 @@ def mineru_parse(pdf_path: Path, api_key: str, out_dir: Path) -> tuple[str, list
         import mineru_open_api  # noqa: F401
     except ImportError as e:
         raise RuntimeError(
-            "未安装 mineru-open-api，无法用 MinerU 云端解析。安装：uv pip install 'arxo[fulltext]'"
+            "未安装 mineru-open-api，无法用 MinerU 云端解析。安装：uv pip install 'helix[fulltext]'"
         ) from e
 
     # 具体调用交由 mineru-open-api 完成：上传 PDF → 轮询 → 下载 zip（含 md + images）

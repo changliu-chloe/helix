@@ -1,14 +1,23 @@
-# arxo
+# helix
 
-论文检索追踪 + 深读理解 CLI。
+人在环中（human-in-the-loop）的科研全流程助手。
 
-从 arXiv / Semantic Scholar / DBLP 检索并追踪你关注领域的最新论文，做深度阅读与结构化 Markdown 笔记，并建立可检索的本地索引。
+围绕「**读 → 复现 → 写**」三个有机结合的板块，把论文科研的全流程串起来——每一步都由你（研究者）主导决策，CLI 与 skill 只做确定性工作和 LLM 编排，不替你拍板。
+
+## 三大板块
+
+1. **读**（已实现）：从 arXiv / Semantic Scholar / DBLP 检索追新，做结构化深读笔记、综述，建可检索的本地索引。
+2. **复现**（部分实现）：从论文总结实验设置，按你的 GPU 判断能否复现、要不要降配，产出可执行复现方案。
+3. **写**（规划中）：基于读过的笔记与复现结果，辅助撰写论文 / 毕设。
+
+> 名字取「螺旋（helix）」——读、复现、写三条链交织上升，像 DNA 一样把科研工作有机缠绕成一个整体。
 
 ## 定位
 
-- **混合形态**：Python CLI 负责检索/抓取/解析/打分/索引等确定性工作；`skills/` 下的 SKILL.md 供外部 coding agent（Claude Code 等）调用来编排"深读/总结"这类需要 LLM 的环节。CLI 本身不硬编码任何 LLM provider。
-- **配置驱动**：检索方向、打分权重全部由 `config.yaml` 决定。
-- **笔记为主 + 索引可查**：深读结果落 Markdown（可对接 Obsidian vault），另建 SQLite FTS5 全文索引供检索。
+- **人在环中**：关键判断（研究方向、复现可行性、写作结论）都交回给你，工具只提供依据与草稿，不越权决策。
+- **混合形态**：Python CLI 负责检索/抓取/解析/打分/索引/显存判级等确定性工作；`skills/` 下的 SKILL.md 供外部 coding agent（Claude Code 等）调用来编排"深读/复现规划/写作"这类需要 LLM 的环节。CLI 本身不硬编码任何 LLM provider。
+- **配置驱动**：检索方向、打分权重、硬件档全部由 `config.yaml` 决定。
+- **笔记为主 + 索引可查**：深读/复现结果落 Markdown（可对接 Obsidian vault），另建 SQLite FTS5 全文索引供检索。
 
 ## 搭环境
 
@@ -22,22 +31,22 @@ cp config.example.yaml config.yaml
 # 按需编辑 config.yaml：research_domains、semantic_scholar_api_key、mineru_api_key
 
 # 3. 启用自然语言触发（把 skills 软链到 .claude/skills/）
-uv run arxo init                    # 项目级：仅本项目目录下的 Claude Code 生效
-# uv run arxo init --scope global   # 或全局：任何目录都能触发（软链到 ~/.claude/skills/）
+uv run helix init                    # 项目级：仅本项目目录下的 Claude Code 生效
+# uv run helix init --scope global   # 或全局：任何目录都能触发（软链到 ~/.claude/skills/）
 ```
 
-> **怎么调用 arxo**：装在项目 venv 里、不在全局 PATH。推荐 `uv run arxo ...`（自动定位项目
-> venv，任意目录可用）；或先 `source .venv/bin/activate` 后直接 `arxo ...`；skills 里统一用 `uv run arxo`。
+> **怎么调用 helix**：装在项目 venv 里、不在全局 PATH。推荐 `uv run helix ...`（自动定位项目
+> venv，任意目录可用）；或先 `source .venv/bin/activate` 后直接 `helix ...`；skills 里统一用 `uv run helix`。
 
-`arxo init` 幂等，可反复执行；软链含本机绝对路径，已 gitignore，**每台机器 clone 后各自跑一次**。
+`helix init` 幂等，可反复执行；软链含本机绝对路径，已 gitignore，**每台机器 clone 后各自跑一次**。
 做完这步，就能在 Claude Code 等支持 skill 的 agent 里用自然语言触发 search / deep-read / daily，
 无需手敲命令。
 
 ## 快速开始
 
 ```bash
-uv run arxo status                              # 查看配置与研究领域
-uv run arxo search "vision language action" --top-n 5   # 检索并打分
+uv run helix status                              # 查看配置与研究领域
+uv run helix search "vision language action" --top-n 5   # 检索并打分
 ```
 
 先编辑 `config.yaml`，把 `research_domains` 换成你的关注方向。
@@ -46,33 +55,33 @@ uv run arxo search "vision language action" --top-n 5   # 检索并打分
 
 | 命令 | 说明 | 状态 |
 |---|---|---|
-| `arxo init` | 软链 skills 到 .claude/skills，启用自然语言触发 | ✅ |
-| `arxo status` | 配置/库/索引状态 | ✅ |
-| `arxo search "<query>"` | 检索 + 4维打分（arxiv/s2/dblp 多源合并去重） | ✅ |
-| `arxo note new <id>` | 抓论文生成深读笔记骨架 | ✅ |
-| `arxo note scan` | 扫描笔记库建关键词映射 | ✅ |
-| `arxo note link <file>` | 正文关键词自动 wikilink | ✅ |
-| `arxo index build` | 建/更新 FTS5 全文索引 | ✅ |
-| `arxo index search "<q>"` | 本地全文检索（bm25 + snippet） | ✅ |
-| `arxo fetch <id>` | 抓全文（MinerU）+ 高清图（源码包）到 assets/ | ✅ |
-| `arxo repro vram --params <B>` | 显存估算 + 对各硬件档判级（装得下/量化/多卡TP/offload） | ✅ |
-| `arxo repro new <笔记\|id>` | 建论文复现工作区骨架（setup.md + plan.md），`--draft` 落 draft_notes | ✅ |
+| `helix init` | 软链 skills 到 .claude/skills，启用自然语言触发 | ✅ |
+| `helix status` | 配置/库/索引状态 | ✅ |
+| `helix search "<query>"` | 检索 + 4维打分（arxiv/s2/dblp 多源合并去重） | ✅ |
+| `helix note new <id>` | 抓论文生成深读笔记骨架 | ✅ |
+| `helix note scan` | 扫描笔记库建关键词映射 | ✅ |
+| `helix note link <file>` | 正文关键词自动 wikilink | ✅ |
+| `helix index build` | 建/更新 FTS5 全文索引 | ✅ |
+| `helix index search "<q>"` | 本地全文检索（bm25 + snippet） | ✅ |
+| `helix fetch <id>` | 抓全文（MinerU）+ 高清图（源码包）到 assets/ | ✅ |
+| `helix repro vram --params <B>` | 显存估算 + 对各硬件档判级（装得下/量化/多卡TP/offload） | ✅ |
+| `helix repro new <笔记\|id>` | 建论文复现工作区骨架（setup.md + plan.md），`--draft` 落 draft_notes | ✅ |
 
-`arxo fetch` 全文解析需 MinerU 云端 key（config `mineru_api_key`）+ `uv pip install 'arxo[fulltext]'`；
-不配 key 时仅抽高清图（离线可用 `--no-mineru`）。`arxo index search --vector` 向量检索接口已预留。
+`helix fetch` 全文解析需 MinerU 云端 key（config `mineru_api_key`）+ `uv pip install 'helix[fulltext]'`；
+不配 key 时仅抽高清图（离线可用 `--no-mineru`）。`helix index search --vector` 向量检索接口已预留。
 
 ## Skills（供外部 agent 编排）
 
 `skills/` 下是给 coding agent（Claude Code 等）读的决策手册。CLI 干确定性活（检索/解析/索引），
 agent 负责需要 LLM 的深读与总结：
 
-- `skills/arxo/` — **总入口**：判断意图并路由到下面三个子流程（"读这篇论文 <id>"、"找些 X 论文"、"开启研究日"都先进这里）
+- `skills/helix/` — **总入口**：判断意图并路由到下面三个子流程（"读这篇论文 <id>"、"找些 X 论文"、"开启研究日"都先进这里）
 - `skills/search/` — 检索路由：本地 FTS vs 跨源检索
 - `skills/deep-read/` — 单篇深读：建骨架 → 读全文填充 → 链接 + 建索引
 - `skills/daily/` — 开启研究日：批量检索 → 推荐笔记 → top-N 深读
 - `skills/reproduce/` — 论文复现规划：抽取实验设置 → 可复现性分级 → 按 GPU 判级适配 → 产出可执行复现方案（借鉴 ref/deepcode 的 Paper2Code）
 
-`arxo init` 后即可在对话里自然语言触发，例如直接说「读这篇论文：2503.22020」。
+`helix init` 后即可在对话里自然语言触发，例如直接说「读这篇论文：2503.22020」。
 
 ## 配置
 

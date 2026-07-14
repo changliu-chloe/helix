@@ -16,7 +16,7 @@ from .config import Config
 
 
 def index_path(cfg: Config) -> Path:
-    """FTS5 索引位置，锚定项目根（config 所在目录）下的 .arxo/index.db。"""
+    """FTS5 索引位置，锚定项目根（config 所在目录）下的 .helix/index.db。"""
     return cfg.index_path
 
 
@@ -105,7 +105,7 @@ def search(cfg: Config, query: str, limit: int = 10) -> list[dict]:
     try:
         cur = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='notes_fts'")
         if cur.fetchone() is None:
-            raise RuntimeError("索引不存在，请先运行：arxo index build")
+            raise RuntimeError("索引不存在，请先运行：helix index build")
         fts_q = _escape_fts_query(query)
         rows = conn.execute(
             "SELECT path, title, snippet(notes_fts, 3, '[', ']', '…', 12) AS snip, "

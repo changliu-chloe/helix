@@ -60,7 +60,7 @@ def _frontmatter(paper: Paper) -> str:
         "url": paper.url,
         "pdf_url": paper.pdf_url,
         "domains": paper.matched_domains,
-        "tags": ["arxo", "paper"],
+        "tags": ["helix", "paper"],
         "score": paper.score_final,
     }
     body = yaml.safe_dump(fm, allow_unicode=True, sort_keys=False, default_flow_style=False)

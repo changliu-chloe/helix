@@ -7,8 +7,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from arxo.sources import fulltext
-from arxo.config import Config
+from helix.sources import fulltext
+from helix.config import Config
 
 
 class TestCollectFigures(unittest.TestCase):
@@ -65,7 +65,7 @@ class TestMineruGating(unittest.TestCase):
 
 class TestRenameImages(unittest.TestCase):
     def test_sequential_rename_and_rewrite(self):
-        from arxo.sources import mineru_client
+        from helix.sources import mineru_client
 
         with tempfile.TemporaryDirectory() as tmp:
             base = Path(tmp)
@@ -93,7 +93,7 @@ class TestRenameImages(unittest.TestCase):
             self.assertEqual({p.name for p in imgs.iterdir()}, {"fig1.jpg", "fig2.jpg"})
 
     def test_no_images_noop(self):
-        from arxo.sources import mineru_client
+        from helix.sources import mineru_client
 
         with tempfile.TemporaryDirectory() as tmp:
             md = "# T\n\n纯文字，无图\n"
@@ -105,7 +105,7 @@ class TestRenameImages(unittest.TestCase):
 class TestMineruCliLocate(unittest.TestCase):
     def test_prefers_sibling_of_python(self):
         # CLI 与当前解释器同目录时应优先返回该路径（不依赖 PATH）
-        from arxo.sources import mineru_client
+        from helix.sources import mineru_client
 
         with tempfile.TemporaryDirectory() as tmp:
             fake_bin = Path(tmp) / "bin"
@@ -116,7 +116,7 @@ class TestMineruCliLocate(unittest.TestCase):
                 self.assertEqual(mineru_client._find_cli(), str(cli))
 
     def test_falls_back_to_path(self):
-        from arxo.sources import mineru_client
+        from helix.sources import mineru_client
 
         with tempfile.TemporaryDirectory() as tmp:
             with mock.patch.object(mineru_client.sys, "executable", str(Path(tmp) / "python")), \

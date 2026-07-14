@@ -120,8 +120,8 @@ class Config:
 
     @property
     def index_path(self) -> Path:
-        """FTS5 索引位置，锚定 base_dir 下的 .arxo/index.db。"""
-        return self.base_dir / ".arxo" / "index.db"
+        """FTS5 索引位置，锚定 base_dir 下的 .helix/index.db。"""
+        return self.base_dir / ".helix" / "index.db"
 
     def all_categories(self) -> list[str]:
         """所有领域的 arXiv 分类去重。"""
@@ -134,10 +134,10 @@ class Config:
 
 
 def find_config(explicit: str | None = None) -> Path:
-    """定位 config.yaml：显式路径 > 环境变量 ARXO_CONFIG > 从 cwd 向上逐级查找。"""
+    """定位 config.yaml：显式路径 > 环境变量 HELIX_CONFIG > 从 cwd 向上逐级查找。"""
     if explicit:
         return Path(explicit)
-    env = os.environ.get("ARXO_CONFIG")
+    env = os.environ.get("HELIX_CONFIG")
     if env:
         return Path(env)
     # 从当前目录向上找 config.yaml（像 git 找 .git），支持在子目录运行
@@ -152,7 +152,7 @@ def find_config(explicit: str | None = None) -> Path:
 def load_config(path: str | None = None) -> Config:
     cfg_path = find_config(path)
     if not cfg_path.exists():
-        raise FileNotFoundError(f"找不到配置文件：{cfg_path}（可用 --config 指定或设 ARXO_CONFIG）")
+        raise FileNotFoundError(f"找不到配置文件：{cfg_path}（可用 --config 指定或设 HELIX_CONFIG）")
 
     with cfg_path.open("r", encoding="utf-8") as f:
         raw: dict[str, Any] = yaml.safe_load(f) or {}

@@ -5,8 +5,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from arxo import config as config_mod
-from arxo.config import Config, load_config
+from helix import config as config_mod
+from helix.config import Config, load_config
 
 
 class TestBaseDirAnchor(unittest.TestCase):
@@ -14,7 +14,7 @@ class TestBaseDirAnchor(unittest.TestCase):
         cfg = Config(notes_dir="notes", _path=Path("/proj/config.yaml"))
         self.assertEqual(cfg.base_dir, Path("/proj"))
         self.assertEqual(cfg.notes_path, Path("/proj/notes"))
-        self.assertEqual(cfg.index_path, Path("/proj/.arxo/index.db"))
+        self.assertEqual(cfg.index_path, Path("/proj/.helix/index.db"))
 
     def test_absolute_notes_dir_preserved(self):
         cfg = Config(notes_dir="/data/vault", _path=Path("/proj/config.yaml"))

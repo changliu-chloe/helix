@@ -306,7 +306,7 @@ def build_plan_skeleton(title: str, note_rel: str, cfg: Config) -> str:
 
 **显存核对**（跑一下贴结果）：
 ```bash
-uv run arxo repro vram --params <B> --dtype <精度> --ctx <长度> --batch <N> [--layers L --hidden H]
+uv run helix repro vram --params <B> --dtype <精度> --ctx <长度> --batch <N> [--layers L --hidden H]
 ```
 <!-- agent: 贴判级结论：fits_single / fits_multi_tp(TP=?) / needs_quant… -->
 

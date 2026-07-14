@@ -3,9 +3,9 @@
 import unittest
 from datetime import datetime, timedelta
 
-from arxo.config import Config, Domain
-from arxo.models import Paper
-from arxo import score
+from helix.config import Config, Domain
+from helix.models import Paper
+from helix import score
 
 
 def _cfg():

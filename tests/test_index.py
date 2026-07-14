@@ -5,8 +5,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from arxo import index
-from arxo.config import Config
+from helix import index
+from helix.config import Config
 
 
 class TestQueryEscape(unittest.TestCase):
@@ -57,7 +57,7 @@ class TestBuildAndSearch(unittest.TestCase):
         att.mkdir(parents=True)
         (att / "fulltext.md").write_text("# 全文附属\n\nchain of thought robot compression\n", encoding="utf-8")
         # 索引 db 放到临时目录，避免污染仓库
-        self._patch = mock.patch.object(index, "index_path", lambda cfg: base / ".arxo" / "index.db")
+        self._patch = mock.patch.object(index, "index_path", lambda cfg: base / ".helix" / "index.db")
         self._patch.start()
 
     def tearDown(self):
