@@ -7,6 +7,7 @@ language: zh                 # zh | en，影响笔记语言
 notes_dir: notes             # 笔记库根目录（可改为你的 Obsidian vault 路径）
 papers_subdir: papers        # 单篇深读笔记子目录（相对 notes_dir）
 daily_subdir: daily          # 每日推荐笔记子目录（相对 notes_dir）
+repro_dir: repro             # 论文复现工作区根目录（与 notes_dir 平级）
 
 # Semantic Scholar API key（可选，留空走匿名限流接口）
 # 也可用环境变量 SEMANTIC_SCHOLAR_API_KEY
@@ -43,3 +44,20 @@ research_domains:
       - cs.AI
       - cs.LG
     priority: 5
+
+# 可复现硬件档。复现方案据此判断模型装不装得下、要不要量化/多卡/offload。
+# 一次配置，所有论文复用。vram_gb 是单卡显存，total = vram_gb × num_gpus。
+# 示例为单机八卡节点；按你的实际机器改。复现优先用排在前面的档。
+hardware_profiles:
+  a100-8x40g:
+    gpu_model: A100-40GB
+    vram_gb: 40
+    num_gpus: 8
+    interconnect: NVLink      # 多卡张量并行(TP)靠 NVLink；PCIe 会显著拖慢
+    notes: 单机 8×40G=320G。TP8 可跑 235B-fp8；单卡 40G 跑 7B 全精度。
+  h20-8x96g:
+    gpu_model: H20
+    vram_gb: 96
+    num_gpus: 8
+    interconnect: NVLink
+    notes: 单机 8×96G=768G，可 TP8 跑 355B-fp8。

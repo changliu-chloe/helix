@@ -55,6 +55,8 @@ uv run arxo search "vision language action" --top-n 5   # 检索并打分
 | `arxo index build` | 建/更新 FTS5 全文索引 | ✅ |
 | `arxo index search "<q>"` | 本地全文检索（bm25 + snippet） | ✅ |
 | `arxo fetch <id>` | 抓全文（MinerU）+ 高清图（源码包）到 assets/ | ✅ |
+| `arxo repro vram --params <B>` | 显存估算 + 对各硬件档判级（装得下/量化/多卡TP/offload） | ✅ |
+| `arxo repro new <笔记\|id>` | 建论文复现工作区骨架（setup.md + plan.md），`--draft` 落 draft_notes | ✅ |
 
 `arxo fetch` 全文解析需 MinerU 云端 key（config `mineru_api_key`）+ `uv pip install 'arxo[fulltext]'`；
 不配 key 时仅抽高清图（离线可用 `--no-mineru`）。`arxo index search --vector` 向量检索接口已预留。
@@ -68,6 +70,7 @@ agent 负责需要 LLM 的深读与总结：
 - `skills/search/` — 检索路由：本地 FTS vs 跨源检索
 - `skills/deep-read/` — 单篇深读：建骨架 → 读全文填充 → 链接 + 建索引
 - `skills/daily/` — 开启研究日：批量检索 → 推荐笔记 → top-N 深读
+- `skills/reproduce/` — 论文复现规划：抽取实验设置 → 可复现性分级 → 按 GPU 判级适配 → 产出可执行复现方案（借鉴 ref/deepcode 的 Paper2Code）
 
 `arxo init` 后即可在对话里自然语言触发，例如直接说「读这篇论文：2503.22020」。
 

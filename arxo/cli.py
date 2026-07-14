@@ -352,6 +352,104 @@ def cmd_index(args: argparse.Namespace) -> int:
     return 2
 
 
+def cmd_repro(args: argparse.Namespace) -> int:
+    import json
+    from pathlib import Path
+
+    from . import repro as repro_mod
+    from .config import load_config
+
+    try:
+        cfg = load_config(args.config)
+    except FileNotFoundError as e:
+        print(str(e), file=sys.stderr)
+        return 1
+
+    if args.action == "vram":
+        if not args.params:
+            print("[arxo] repro vram 需要 --params（十亿参数，如 --params 7 表示 7B）", file=sys.stderr)
+            return 1
+        try:
+            est = repro_mod.estimate_vram(
+                args.params, dtype=args.dtype, ctx=args.ctx, batch=args.batch,
+                num_layers=args.layers, hidden=args.hidden, kv_dtype=args.kv_dtype,
+            )
+        except ValueError as e:
+            print(f"[arxo] {e}", file=sys.stderr)
+            return 1
+        # 指定 --profile 则只判那台，否则判 config 全部
+        if args.profile:
+            prof = cfg.find_profile(args.profile)
+            if prof is None:
+                names = ", ".join(p.name for p in cfg.hardware_profiles) or "（无）"
+                print(f"[arxo] 未知硬件档 '{args.profile}'，config 已有：{names}", file=sys.stderr)
+                return 1
+            fits = [repro_mod.fit_check(est, prof)]
+        else:
+            fits = repro_mod.fit_check_all(est, cfg)
+
+        out = {"estimate": est.to_dict(), "fit": [f.to_dict() for f in fits]}
+        print(json.dumps(out, ensure_ascii=False, indent=2))
+        approx = "（KV 按经验架构近似）" if est.approximate else ""
+        print(f"[arxo] {args.params}B/{est.dtype} ctx={est.ctx} batch={est.batch} "
+              f"→ 约 {est.total_gb:.1f}GB {approx}", file=sys.stderr)
+        for f in fits:
+            print(f"  - {f.profile}: {f.summary}", file=sys.stderr)
+            for s in f.suggestions:
+                print(f"      · {s}", file=sys.stderr)
+        return 0
+
+    if args.action == "new":
+        if not args.target:
+            print("[arxo] repro new 需要笔记路径或 arXiv id", file=sys.stderr)
+            return 1
+        # 解析 title / domain / note_rel：优先当作已存在的笔记文件，否则当 arXiv id
+        title = domain = note_rel = None
+        p = Path(args.target)
+        if p.exists() and p.suffix == ".md":
+            from .notes import _parse_frontmatter
+            fm = _parse_frontmatter(p.read_text(encoding="utf-8", errors="replace"))
+            title = fm.get("title") or p.stem
+            doms = fm.get("domains") or []
+            domain = args.domain or (doms[0] if doms else "未分类")
+            try:
+                note_rel = str(p.resolve().relative_to(cfg.notes_path)).replace("\\", "/")
+            except ValueError:
+                note_rel = str(p).replace("\\", "/")
+        else:
+            from .sources import arxiv
+            try:
+                paper = arxiv.get_by_id(args.target)
+            except RuntimeError as e:
+                print(str(e), file=sys.stderr)
+                return 1
+            if paper is None:
+                print(f"[arxo] 未找到论文，也不是已存在笔记：{args.target}", file=sys.stderr)
+                return 1
+            title = paper.title
+            domain = args.domain or "未分类"
+            note_rel = f"papers/{domain}/{title}"
+
+        short = args.name or repro_mod._short_name(title)
+        try:
+            ws, created = repro_mod.build_repro_workspace(
+                title, note_rel, domain, short, cfg,
+                draft=args.draft, overwrite=args.overwrite,
+            )
+        except OSError as e:
+            print(f"[arxo] {e}", file=sys.stderr)
+            return 1
+        result = {"workspace": str(ws), "created": created, "title": title, "domain": domain}
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        where = "draft_notes" if args.draft else "repro"
+        msg = f"新建 {created}" if created else "已存在（跳过，可加 --overwrite）"
+        print(f"[arxo] 复现工作区（{where}）：{ws} — {msg}", file=sys.stderr)
+        print(str(ws))
+        return 0
+
+    return 2
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="arxo", description="论文检索追踪 + 深读理解 CLI")
     p.add_argument("--config", help="config.yaml 路径（默认当前目录或 $ARXO_CONFIG）")
@@ -387,6 +485,23 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--overwrite", action="store_true", help="new: 覆盖已存在的笔记")
     sp.add_argument("--domain", help="new: 指定研究方向（归档目录），可用 config 里没有的新方向；留空则自动判定")
     sp.set_defaults(func=cmd_note)
+
+    sp = sub.add_parser("repro", help="论文复现：vram 显存判级 / new 建复现工作区")
+    sp.add_argument("action", choices=["vram", "new"])
+    sp.add_argument("target", nargs="?", help="new: 笔记路径或 arXiv id")
+    sp.add_argument("--params", type=float, help="vram: 模型参数量（十亿，如 7 表示 7B）")
+    sp.add_argument("--dtype", default="fp16", help="vram: 权重精度 fp32/fp16/bf16/fp8/int8/int4")
+    sp.add_argument("--ctx", type=int, default=2048, help="vram: 上下文长度")
+    sp.add_argument("--batch", type=int, default=1, help="vram: 批大小")
+    sp.add_argument("--layers", type=int, default=None, help="vram: 层数（给了则精算 KV）")
+    sp.add_argument("--hidden", type=int, default=None, help="vram: hidden size（给了则精算 KV）")
+    sp.add_argument("--kv-dtype", default=None, help="vram: KV cache 精度（默认同权重上限 fp16）")
+    sp.add_argument("--profile", help="vram: 只判这台硬件档；省略判 config 全部")
+    sp.add_argument("--name", help="new: 工作区短名（省略从标题自动生成）")
+    sp.add_argument("--domain", help="new: 研究方向（归档子目录）")
+    sp.add_argument("--draft", action="store_true", help="new: 落 draft_notes/ 而非 repro/")
+    sp.add_argument("--overwrite", action="store_true", help="new: 覆盖已有骨架")
+    sp.set_defaults(func=cmd_repro)
 
     sp = sub.add_parser("index", help="FTS5 索引：build / search <query>")
     sp.add_argument("action", choices=["build", "search"])
