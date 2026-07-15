@@ -25,6 +25,9 @@ dist/
 venv/
 env/
 
+# 一次性维护脚本（如数据修复），跑完即删，不进版本控制
+scripts/
+
 # 缓存/临时
 *.tmp
 .DS_Store
