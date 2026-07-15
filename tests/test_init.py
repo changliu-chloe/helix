@@ -52,5 +52,52 @@ class TestLinkSkills(unittest.TestCase):
         self.assertTrue(any("非软链" in x for x in logs))
 
 
+class TestPruneStaleLinks(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        for name in ("search", "daily"):
+            d = self.root / "skills" / name
+            d.mkdir(parents=True)
+            (d / "SKILL.md").write_text("---\nname: %s\n---\n" % name, encoding="utf-8")
+        self._p1 = mock.patch.object(init, "PROJECT_ROOT", self.root)
+        self._p2 = mock.patch.object(init, "SKILLS_SRC", self.root / "skills")
+        self._p1.start()
+        self._p2.start()
+
+    def tearDown(self):
+        self._p1.stop()
+        self._p2.stop()
+        self.tmp.cleanup()
+
+    def test_prunes_link_to_deleted_skill(self):
+        init.link_skills(scope="project")
+        dest = self.root / ".claude" / "skills"
+        # simulate upstream deleting the "daily" skill
+        (self.root / "skills" / "daily" / "SKILL.md").unlink()
+        (self.root / "skills" / "daily").rmdir()
+        logs = init.prune_stale_skill_links(scope="project")
+        self.assertFalse((dest / "daily").exists())        # dangling link removed
+        self.assertTrue((dest / "search").is_symlink())    # valid link kept
+        self.assertTrue(any("daily" in x for x in logs))
+
+    def test_leaves_foreign_links_untouched(self):
+        # a symlink the user added pointing OUTSIDE our skills/ dir must not be pruned
+        dest = self.root / ".claude" / "skills"
+        dest.mkdir(parents=True)
+        external = self.root / "external_skill"
+        external.mkdir()
+        foreign = dest / "mine"
+        foreign.symlink_to(external, target_is_directory=True)
+        external.rmdir()  # now dangling, but it's not ours
+        logs = init.prune_stale_skill_links(scope="project")
+        self.assertTrue(foreign.is_symlink())              # left alone
+        self.assertEqual(logs, [])
+
+    def test_idempotent_when_nothing_stale(self):
+        init.link_skills(scope="project")
+        self.assertEqual(init.prune_stale_skill_links(scope="project"), [])
+
+
 if __name__ == "__main__":
     unittest.main()

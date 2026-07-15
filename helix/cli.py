@@ -46,6 +46,36 @@ def cmd_init(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_migrate(args: argparse.Namespace) -> int:
+    from . import migrate as migrate_mod
+
+    cfg = _load_cfg(args)
+    if cfg is None:
+        return 1
+
+    report, logs = migrate_mod.run_migrate(cfg, scope=args.scope)
+    for line in logs:
+        _err(line)
+
+    # Summary: what was enabled + what you still need to do by hand.
+    _err(f"migrate 完成：新链 {len(report.linked)} 个 skill，清理 {len(report.pruned)} 个失效软链")
+    todo: list[str] = []
+    if report.new_config_keys:
+        keys = "、".join(report.new_config_keys)
+        todo.append(f"config.yaml 可新增字段（参考 config.example.yaml）：{keys}")
+    if report.deps_changed:
+        todo.append("依赖有更新，请跑：uv sync --extra dev（或用 uv run helix 会自动同步）")
+    if report.index_stale_hint:
+        todo.append("笔记比索引新，建议重建：uv run helix index build")
+    if todo:
+        _err("以下需你手动处理：")
+        for t in todo:
+            _err(f"  · {t}")
+    else:
+        _err("无需手动处理，全部就绪。")
+    return 0
+
+
 def cmd_status(args: argparse.Namespace) -> int:
     cfg = _load_cfg(args)
     if cfg is None:
@@ -381,6 +411,11 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--scope", choices=["project", "global"], default="project",
                     help="project: 本项目 .claude/skills（默认）；global: ~/.claude/skills")
     sp.set_defaults(func=cmd_init)
+
+    sp = sub.add_parser("migrate", help="git pull 后追平：重链 skill、清失效软链、提示 config/依赖/索引更新")
+    sp.add_argument("--scope", choices=["project", "global"], default="project",
+                    help="project: 本项目 .claude/skills（默认）；global: ~/.claude/skills")
+    sp.set_defaults(func=cmd_migrate)
 
     sp = sub.add_parser("search", help="检索并打分论文（arxiv/s2/dblp）")
     sp.add_argument("query", nargs="?", help="检索词（逗号分隔多词；留空则按 config 领域检索）")

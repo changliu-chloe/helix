@@ -42,6 +42,17 @@ uv run helix init                    # 项目级：仅本项目目录下的 Clau
 做完这步，就能在 Claude Code 等支持 skill 的 agent 里用自然语言触发 search / deep-read / daily，
 无需手敲命令。
 
+### 升级（正在用的仓库 `git pull` 之后）
+
+`git pull` 只更新代码文件，不会自动接线：新增的 skill 不会软链到 `.claude`、新依赖不会装、config 新字段你也不会知道。拉完跑一次：
+
+```bash
+git pull
+uv run helix migrate     # 幂等：重链新 skill、清失效软链，并提示还需手动做什么
+```
+
+`migrate` **默认不改你的数据**：config 缺哪些新字段只提示（不动你的 `config.yaml`），依赖有变化提示你 `uv sync --extra dev`（不自动装），笔记比索引新提示你 `index build`（不自动重建）。按它列出的「需手动处理」逐条做即可。
+
 ## 快速开始
 
 ```bash
@@ -55,7 +66,8 @@ uv run helix search "vision language action" --top-n 5   # 检索并打分
 
 | 命令 | 说明 | 状态 |
 |---|---|---|
-| `helix init` | 软链 skills 到 .claude/skills，启用自然语言触发 | ✅ |
+| `helix init` | 软链 skills 到 .claude/skills，启用自然语言触发（首次搭建） | ✅ |
+| `helix migrate` | `git pull` 后追平：重链新 skill、清失效软链、提示 config/依赖/索引更新 | ✅ |
 | `helix status` | 配置/库/索引状态 | ✅ |
 | `helix search "<query>"` | 检索 + 4维打分（arxiv/s2/dblp 多源合并去重） | ✅ |
 | `helix note new <id>` | 抓论文生成深读笔记骨架（文件用短名） | ✅ |
