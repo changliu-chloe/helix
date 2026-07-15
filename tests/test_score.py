@@ -1,4 +1,4 @@
-"""打分逻辑单元测试。"""
+"""Scoring logic unit tests."""
 
 import unittest
 from datetime import datetime, timedelta
@@ -20,7 +20,7 @@ class TestRelevance(unittest.TestCase):
     def test_title_keyword_and_category(self):
         p = Paper(paper_id="1", title="A VLA model", abstract="robotics", categories=["cs.RO"])
         rel, domain, matched = score.relevance_score(p, _cfg().domains, [])
-        # 标题命中 VLA(0.5) + 分类 cs.RO(1.0)
+        # title matches VLA(0.5) + category cs.RO(1.0)
         self.assertAlmostEqual(rel, 1.5)
         self.assertEqual(domain, "VLA")
         self.assertIn("VLA", matched)
@@ -77,7 +77,7 @@ class TestFinalAndPipeline(unittest.TestCase):
                   published=(datetime.now() - timedelta(days=2)).isoformat()),
         ]
         scored = score.score_papers(papers, cfg)
-        # 只有 b 相关，a 被过滤
+        # only b is relevant; a is filtered out
         self.assertEqual(len(scored), 1)
         self.assertEqual(scored[0].paper_id, "b")
         self.assertGreater(scored[0].score_final, 0)

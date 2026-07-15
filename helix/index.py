@@ -1,7 +1,7 @@
-"""笔记库的 SQLite FTS5 全文索引。
+"""SQLite FTS5 full-text index for the notes library.
 
-用标准库 sqlite3 的 FTS5 虚拟表，对笔记的标题/摘要/正文建全文索引。
-向量检索预留接口（vector_search），迭代后续再接 sentence-transformers。
+Uses the stdlib sqlite3 FTS5 virtual table to full-text index note title/abstract/body.
+Vector search is a reserved interface (vector_search); sentence-transformers to be wired in a later iteration.
 """
 
 from __future__ import annotations
@@ -10,13 +10,12 @@ import re
 import sqlite3
 from pathlib import Path
 
-import yaml
-
+from . import frontmatter
 from .config import Config
 
 
 def index_path(cfg: Config) -> Path:
-    """FTS5 索引位置，锚定项目根（config 所在目录）下的 .helix/index.db。"""
+    """FTS5 index location, at .helix/index.db under the project root (the config directory)."""
     return cfg.index_path
 
 
@@ -36,27 +35,15 @@ def _fts5_available(conn: sqlite3.Connection) -> bool:
         return False
 
 
-def _parse_frontmatter(content: str) -> tuple[dict, str]:
-    """返回 (frontmatter dict, 正文)。"""
-    m = re.match(r"^---\s*\n(.*?)^---\s*\n(.*)$", content, re.MULTILINE | re.DOTALL)
-    if not m:
-        return {}, content
-    try:
-        fm = yaml.safe_load(m.group(1)) or {}
-    except yaml.YAMLError:
-        fm = {}
-    return fm, m.group(2)
-
-
 def build(cfg: Config) -> tuple[int, str]:
-    """(重新)构建 FTS5 索引。返回 (索引条数, 提示信息)。"""
+    """(Re)build the FTS5 index. Returns (number of indexed entries, message)."""
     papers_dir = cfg.papers_path
     conn = _connect(cfg)
     try:
         if not _fts5_available(conn):
             return 0, "当前 SQLite 不支持 FTS5，无法建索引"
         conn.execute("DROP TABLE IF EXISTS notes_fts")
-        # path 为非索引列（UNINDEXED），仅存储
+        # path is a non-indexed column (UNINDEXED), stored only
         conn.execute(
             "CREATE VIRTUAL TABLE notes_fts USING fts5("
             "path UNINDEXED, title, abstract, body, tokenize='unicode61')"
@@ -70,10 +57,10 @@ def build(cfg: Config) -> tuple[int, str]:
                     content = md.read_text(encoding="utf-8", errors="replace")
                 except OSError:
                     continue
-                fm, body = _parse_frontmatter(content)
+                fm, body = frontmatter.split(content)
                 rel = str(md.relative_to(cfg.notes_path)).replace("\\", "/")
                 title = str(fm.get("title") or md.stem)
-                # 摘要：取正文里 ## 摘要/Abstract 段，退化为空
+                # abstract: take the ## 摘要/Abstract section from the body, empty if absent
                 abstract = _extract_abstract(body)
                 conn.execute(
                     "INSERT INTO notes_fts(path, title, abstract, body) VALUES (?,?,?,?)",
@@ -92,7 +79,7 @@ def _extract_abstract(body: str) -> str:
 
 
 def _escape_fts_query(query: str) -> str:
-    """把用户查询包成 FTS5 安全的形式：按空白拆词，各词加引号，OR 连接。"""
+    """Wrap the user query into an FTS5-safe form: split on whitespace, quote each token, join with OR."""
     tokens = [t for t in re.split(r"\s+", query.strip()) if t]
     if not tokens:
         return '""'
@@ -100,7 +87,7 @@ def _escape_fts_query(query: str) -> str:
 
 
 def search(cfg: Config, query: str, limit: int = 10) -> list[dict]:
-    """FTS5 全文检索，按 bm25 相关度排序。返回命中笔记列表。"""
+    """FTS5 full-text search, ranked by bm25 relevance. Returns the list of matching notes."""
     conn = _connect(cfg)
     try:
         cur = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='notes_fts'")
@@ -119,5 +106,5 @@ def search(cfg: Config, query: str, limit: int = 10) -> list[dict]:
 
 
 def vector_search(cfg: Config, query: str, limit: int = 10) -> list[dict]:
-    """向量检索占位。后续迭代接 sentence-transformers + 本地向量索引。"""
+    """Vector search placeholder. A later iteration will wire in sentence-transformers + a local vector index."""
     raise NotImplementedError("向量检索尚未实现（计划后续迭代加入 sentence-transformers）")

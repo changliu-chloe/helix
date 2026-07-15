@@ -24,6 +24,10 @@ dev = ["pytest"]
 [project.scripts]
 helix = "helix.cli:main"
 
+[tool.pytest.ini_options]
+# 只收集本项目 tests/，不碰 ref/ 下的第三方参考仓库
+testpaths = ["tests"]
+
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["helix*"]

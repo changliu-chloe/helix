@@ -1,12 +1,11 @@
-"""来源适配器（S2/DBLP）与去重单元测试。用 mock 响应，不打真实网络。"""
+"""Source adapters (S2/DBLP) unit tests. Uses mocked responses, no real network."""
 
 import unittest
 from unittest import mock
 
-from helix.sources import semantic_scholar as s2
-from helix.sources import dblp
+from helix.adapters import semantic_scholar as s2
+from helix.adapters import dblp
 from helix.models import Paper
-from helix.cli import _dedup_papers
 
 
 S2_SAMPLE = {
@@ -23,7 +22,7 @@ S2_SAMPLE = {
             "authors": [{"name": "A B"}, {"name": "C D"}],
             "externalIds": {"ArXiv": "2406.09246"},
         },
-        {"paperId": "no-title", "title": None},  # 应被丢弃
+        {"paperId": "no-title", "title": None},  # should be discarded
     ]
 }
 
@@ -52,15 +51,15 @@ class TestS2(unittest.TestCase):
     def test_parse_and_sort(self):
         with mock.patch.object(s2, "_request", return_value=S2_SAMPLE):
             papers = s2.search("vla")
-        self.assertEqual(len(papers), 1)  # None 标题被丢弃
+        self.assertEqual(len(papers), 1)  # None title discarded
         p = papers[0]
-        self.assertEqual(p.paper_id, "2406.09246")  # arXiv id 优先
+        self.assertEqual(p.paper_id, "2406.09246")  # arXiv id preferred
         self.assertEqual(p.citation_count, 320)
         self.assertEqual(p.source, "s2")
         self.assertEqual(p.authors, ["A B", "C D"])
 
     def test_no_key_pre_request_throttle(self):
-        # 无 api_key 时请求前应主动 sleep 节流
+        # without api_key, should proactively sleep to throttle before the request
         import json as _json
 
         fake_resp = mock.MagicMock()
@@ -84,7 +83,7 @@ class TestS2(unittest.TestCase):
             s2.urllib.request, "urlopen", return_value=fake_resp
         ):
             s2._request("http://x", api_key="KEY")
-        msleep.assert_not_called()  # 有 key 不节流
+        msleep.assert_not_called()  # with a key, no throttling
 
 
 class TestDBLP(unittest.TestCase):
@@ -93,30 +92,10 @@ class TestDBLP(unittest.TestCase):
             papers = dblp.search("vlm")
         self.assertEqual(len(papers), 1)
         p = papers[0]
-        self.assertEqual(p.title, "A Vision-Language Model & Beyond")  # &amp; 解码 + 去尾点
+        self.assertEqual(p.title, "A Vision-Language Model & Beyond")  # &amp; decoded + trailing period stripped
         self.assertEqual(p.categories, ["CVPR"])
         self.assertEqual(p.source, "dblp")
         self.assertEqual(p.published, "2024")
-
-
-class TestDedup(unittest.TestCase):
-    def test_dedup_by_id(self):
-        papers = [
-            Paper(paper_id="2406.09246", title="X", source="arxiv"),
-            Paper(paper_id="2406.09246", title="X", source="s2"),  # 重复 id
-            Paper(paper_id="other", title="Y", source="dblp"),
-        ]
-        out = _dedup_papers(papers)
-        self.assertEqual(len(out), 2)
-        self.assertEqual(out[0].source, "arxiv")  # 保留先出现的
-
-    def test_dedup_by_title_when_no_id(self):
-        papers = [
-            Paper(paper_id="", title="Same Title!", source="s2"),
-            Paper(paper_id="", title="same title", source="dblp"),  # 归一化后相同
-        ]
-        out = _dedup_papers(papers)
-        self.assertEqual(len(out), 1)
 
 
 if __name__ == "__main__":

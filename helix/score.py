@@ -1,7 +1,7 @@
-"""4维打分：相关性 / 新近性 / 热度 / 质量。
+"""4-dimension scoring: relevance / recency / popularity / quality.
 
-移植自 ref/evil-read-arxiv 的打分逻辑，重构为对 Paper 操作。
-权重由 config.yaml 的 score_weights 驱动（缺省回退到 DEFAULT_WEIGHTS）。
+Ported from ref/evil-read-arxiv's scoring logic, refactored to operate on Paper.
+Weights are driven by score_weights in config.yaml (falls back to DEFAULT_WEIGHTS).
 """
 
 from __future__ import annotations
@@ -11,19 +11,19 @@ from datetime import datetime, timezone
 from .config import Config, Domain
 from .models import Paper
 
-# 各维度原始分满分（归一化基准）
+# Full raw score per dimension (normalization baseline)
 SCORE_MAX = 3.0
 
-# 相关性：关键词/分类匹配加分
+# Relevance: boosts for keyword/category matches
 RELEVANCE_TITLE_KEYWORD_BOOST = 0.5
 RELEVANCE_SUMMARY_KEYWORD_BOOST = 0.3
 RELEVANCE_CATEGORY_MATCH_BOOST = 1.0
 
-# 新近性阈值（天 -> 分）
+# Recency thresholds (days -> score)
 RECENCY_THRESHOLDS = [(30, 3.0), (90, 2.0), (180, 1.0)]
 RECENCY_DEFAULT = 0.0
 
-# 热度：引用数达到该值视为满分
+# Popularity: citation count at/above this is treated as full score
 POPULARITY_CITATION_FULL_SCORE = 100
 
 DEFAULT_WEIGHTS = {
@@ -33,7 +33,7 @@ DEFAULT_WEIGHTS = {
     "quality": 0.10,
 }
 
-# 质量推断词表
+# Word lists for inferring quality
 _STRONG_INNOVATION = ["state-of-the-art", "sota", "breakthrough", "first", "surpass", "outperform", "pioneering"]
 _WEAK_INNOVATION = ["novel", "propose", "introduce", "new approach", "new method", "innovative"]
 _METHOD_INDICATORS = ["framework", "architecture", "algorithm", "mechanism", "pipeline", "end-to-end"]
@@ -42,7 +42,7 @@ _EXPERIMENT_INDICATORS = ["experiment", "evaluation", "benchmark", "ablation", "
 
 
 def _parse_date(iso: str) -> datetime | None:
-    """把 ISO 日期字符串解析为 datetime（容忍多种格式）。"""
+    """Parse an ISO date string into a datetime (tolerant of several formats)."""
     if not iso:
         return None
     s = iso.replace("Z", "+00:00")
@@ -59,7 +59,7 @@ def _parse_date(iso: str) -> datetime | None:
 
 
 def relevance_score(paper: Paper, domains: list[Domain], excluded: list[str]) -> tuple[float, str | None, list[str]]:
-    """相关性评分。返回 (分数, 最佳领域, 命中关键词)。命中排除词直接返回 0。"""
+    """Relevance score. Returns (score, best domain, matched keywords). Returns 0 if an excluded keyword hits."""
     title = (paper.title or "").lower()
     summary = (paper.abstract or "").lower()
     categories = set(paper.categories or [])
@@ -107,7 +107,7 @@ def recency_score(published: str, now: datetime | None = None) -> float:
 
 
 def popularity_score(paper: Paper) -> float:
-    """有引用数按引用数归一化；否则用新论文的"潜在热度"近似。"""
+    """Normalize by citation count when available; otherwise approximate a new paper's "potential popularity"."""
     if paper.citation_count is not None:
         return min(paper.citation_count / (POPULARITY_CITATION_FULL_SCORE / SCORE_MAX), SCORE_MAX)
     dt = _parse_date(paper.published)
@@ -146,7 +146,7 @@ def quality_score(abstract: str) -> float:
 
 
 def final_score(rel: float, rec: float, pop: float, qual: float, weights: dict[str, float]) -> float:
-    """四维归一化到 0-10 后加权求和。"""
+    """Normalize the four dimensions to 0-10, then compute a weighted sum."""
     raw = {"relevance": rel, "recency": rec, "popularity": pop, "quality": qual}
     normalized = {k: (v / SCORE_MAX) * 10 for k, v in raw.items()}
     total = sum(normalized[k] * weights.get(k, DEFAULT_WEIGHTS[k]) for k in DEFAULT_WEIGHTS)
@@ -154,7 +154,7 @@ def final_score(rel: float, rec: float, pop: float, qual: float, weights: dict[s
 
 
 def score_papers(papers: list[Paper], cfg: Config) -> list[Paper]:
-    """对论文批量打分并按最终分降序排序。相关性为 0 的剔除。"""
+    """Score papers in bulk and sort by final score descending. Papers with relevance 0 are dropped."""
     weights = cfg.score_weights or DEFAULT_WEIGHTS
     scored: list[Paper] = []
     for p in papers:

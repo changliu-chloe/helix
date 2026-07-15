@@ -1,4 +1,4 @@
-"""config 路径锚定单元测试：相对路径锚定 config 目录、绝对路径原样、向上查找。"""
+"""config path-anchoring unit tests: relative paths anchored to the config dir, absolute paths preserved, upward lookup."""
 
 import os
 import tempfile
