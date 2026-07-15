@@ -8,7 +8,8 @@ notes_dir: notes             # 笔记库根目录（可改为你的 Obsidian vau
 papers_subdir: papers        # 单篇深读笔记子目录（相对 notes_dir）
 daily_subdir: daily          # 每日推荐笔记子目录（相对 notes_dir）
 review_subdir: reviews       # 文献综述笔记子目录（相对 notes_dir）
-repro_dir: repro             # 论文复现工作区根目录（与 notes_dir 平级）
+experiments_dir: experiments # 实验工作区根目录（复现别人 + 我自己的实验，与 notes_dir 平级）
+                             # 旧版叫 repro_dir，仍能读；跑 `helix migrate --yes` 搬迁到 experiments/
 
 # 文献综述 / 独立评审打分（见 skills/review、skills/deep-read）
 # reviewer_model：经 Codex MCP 调用的独立评审模型，给论文打三维分（相关性/创新性/可靠性）。
@@ -69,3 +70,13 @@ hardware_profiles:
     num_gpus: 8
     interconnect: NVLink
     notes: 单机 8×96G=768G，可 TP8 跑 355B-fp8。
+
+# 远程 GPU 机器册（可选，留空即 exp push/pull 传送带关闭）。
+# 笔记在本地、实验在远程时用：helix exp push/pull 把方案推上去、把结果拉回来。
+# 这里只登记「机器长什么样」；「某个实验推/拉哪些文件」在每个工作区的 sync.yaml 里（贴着实验走）。
+# host 建议用 ~/.ssh/config 里的 alias，别写明文密码（写了会告警）。
+remotes:
+  gpu-a100:
+    host: gpu-a100                     # ssh 目标，建议是 ~/.ssh/config 的 alias
+    remote_repro_root: /data/helix-experiments   # 远程实验根目录
+    hardware_profile: a100-8x40g       # 这台机对应上面哪个硬件档（复用判级）

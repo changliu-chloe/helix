@@ -48,13 +48,35 @@ class HardwareProfile:
 
 
 @dataclass
+class Remote:
+    """A remote GPU machine for running experiments. The per-workspace sync.yaml references one by name.
+
+    Only records "what the machine looks like" (how to connect + remote root + which hardware profile);
+    "which files this experiment pushes/pulls" lives in each workspace's sync.yaml, close to the experiment.
+    """
+
+    name: str                       # remote name, referenced by sync.yaml's `remote:` field
+    host: str = ""                  # ssh target; prefer a ~/.ssh/config alias over a bare IP/password
+    remote_repro_root: str = ""     # experiments root on the remote, e.g. /data/helix-experiments
+    hardware_profile: str = ""      # name of a hardware_profiles entry this machine physically is
+
+    def to_dict(self) -> dict:
+        return {
+            "name": self.name,
+            "host": self.host,
+            "remote_repro_root": self.remote_repro_root,
+            "hardware_profile": self.hardware_profile,
+        }
+
+
+@dataclass
 class Config:
     language: str = "zh"
     notes_dir: str = "notes"
     papers_subdir: str = "papers"
     daily_subdir: str = "daily"
     review_subdir: str = "reviews"
-    repro_dir: str = "repro"
+    experiments_dir: str = "experiments"
     reviewer_model: str = "gpt-5.6-sol"
     review_funnel_top_n: int = 10
     semantic_scholar_api_key: str = ""
@@ -63,6 +85,7 @@ class Config:
     excluded_keywords: list[str] = field(default_factory=list)
     domains: list[Domain] = field(default_factory=list)
     hardware_profiles: list[HardwareProfile] = field(default_factory=list)
+    remotes: list[Remote] = field(default_factory=list)
     _path: Path | None = None
 
     @property
@@ -106,24 +129,30 @@ class Config:
         return self.notes_path / self.review_subdir
 
     @property
-    def repro_path(self) -> Path:
-        """Reproduction workspace root, a sibling of notes_path, anchored to base_dir."""
-        return self._resolve(self.repro_dir)
+    def experiments_path(self) -> Path:
+        """Experiments workspace root (reproduction + my own experiments), a sibling of notes_path, anchored to base_dir."""
+        return self._resolve(self.experiments_dir)
 
-    def repro_workspace_path(self, domain: str, short_name: str, draft: bool = False) -> Path:
-        """Reproduction workspace for a single paper: repro/<domain>/<short_name>/ (goes to draft_notes/ when --draft)."""
+    def experiment_workspace_path(self, domain: str, short_name: str, draft: bool = False) -> Path:
+        """Experiment workspace for one paper/experiment: experiments/<domain>/<short_name>/ (goes to draft_notes/ when --draft)."""
         import re as _re
 
         def _safe(s: str, fallback: str) -> str:
             return _re.sub(r'[ /\\:*?"<>|]+', "_", s or fallback).strip("_") or fallback
 
-        root = self._resolve("draft_notes") if draft else self.repro_path
+        root = self._resolve("draft_notes") if draft else self.experiments_path
         return root / _safe(domain, "未分类") / _safe(short_name, "untitled")
 
     def find_profile(self, name: str) -> HardwareProfile | None:
         for p in self.hardware_profiles:
             if p.name == name:
                 return p
+        return None
+
+    def find_remote(self, name: str) -> Remote | None:
+        for r in self.remotes:
+            if r.name == name:
+                return r
         return None
 
     @property
@@ -191,13 +220,29 @@ def load_config(path: str | None = None) -> Config:
             )
         )
 
+    remotes = []
+    for name, spec in (raw.get("remotes") or {}).items():
+        spec = spec or {}
+        remotes.append(
+            Remote(
+                name=name,
+                host=str(spec.get("host", "") or ""),
+                remote_repro_root=str(spec.get("remote_repro_root", "") or ""),
+                hardware_profile=str(spec.get("hardware_profile", "") or ""),
+            )
+        )
+
+    # experiments_dir renamed from the legacy repro_dir; read the new key first, fall back to the old
+    # one so pre-existing config.yaml keeps working (helix migrate prompts the rename).
+    experiments_dir = raw.get("experiments_dir") or raw.get("repro_dir") or "experiments"
+
     return Config(
         language=raw.get("language", "zh"),
         notes_dir=raw.get("notes_dir", "notes"),
         papers_subdir=raw.get("papers_subdir", "papers"),
         daily_subdir=raw.get("daily_subdir", "daily"),
         review_subdir=raw.get("review_subdir", "reviews"),
-        repro_dir=raw.get("repro_dir", "repro"),
+        experiments_dir=experiments_dir,
         reviewer_model=raw.get("reviewer_model", "gpt-5.6-sol") or "gpt-5.6-sol",
         review_funnel_top_n=int(raw.get("review_funnel_top_n", 10) or 10),
         semantic_scholar_api_key=raw.get("semantic_scholar_api_key", "") or "",
@@ -206,5 +251,6 @@ def load_config(path: str | None = None) -> Config:
         excluded_keywords=list(raw.get("excluded_keywords") or []),
         domains=domains,
         hardware_profiles=profiles,
+        remotes=remotes,
         _path=cfg_path,
     )

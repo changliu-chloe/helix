@@ -86,30 +86,66 @@ class TestShortName(unittest.TestCase):
 
 
 class TestWorkspaceSkeleton(unittest.TestCase):
-    def test_creates_setup_and_plan(self):
+    def test_repro_creates_full_skeleton(self):
         with tempfile.TemporaryDirectory() as d:
-            cfg = Config(notes_dir="notes", repro_dir="repro", _path=Path(d) / "config.yaml")
-            ws, created = repro.build_repro_workspace(
-                "Test Paper", "papers/X/Test", "X", "test", cfg, draft=False,
+            cfg = Config(notes_dir="notes", experiments_dir="experiments", _path=Path(d) / "config.yaml")
+            ws, created = repro.build_experiment_workspace(
+                "Test Paper", "papers/X/Test", "X", "test", cfg, kind="repro", draft=False,
             )
-            self.assertEqual(set(created), {"setup.md", "plan.md"})
+            self.assertEqual(
+                set(created),
+                {"setup.md", "plan.md", "results/index.md", "RESULTS_LAYOUT.md", "sync.yaml"},
+            )
             self.assertTrue((ws / "setup.md").exists())
-            self.assertTrue((ws / "plan.md").exists())
-            self.assertIn("repro", str(ws))
+            self.assertTrue((ws / "results" / "index.md").exists())
+            self.assertTrue((ws / "RESULTS_LAYOUT.md").exists())
+            self.assertIn("experiments", str(ws))
+            # results/index.md carries type:repro in frontmatter
+            from helix import frontmatter
+            fm = frontmatter.meta((ws / "results" / "index.md").read_text(encoding="utf-8"))
+            self.assertEqual(fm.get("type"), "repro")
+
+    def test_mine_has_no_setup(self):
+        with tempfile.TemporaryDirectory() as d:
+            cfg = Config(experiments_dir="experiments", _path=Path(d) / "config.yaml")
+            ws, created = repro.build_experiment_workspace(
+                "我的对比实验", "papers/X/Base", "X", "my-exp", cfg, kind="mine",
+            )
+            self.assertNotIn("setup.md", created)
+            self.assertFalse((ws / "setup.md").exists())
+            self.assertIn("plan.md", created)
+            from helix import frontmatter
+            fm = frontmatter.meta((ws / "results" / "index.md").read_text(encoding="utf-8"))
+            self.assertEqual(fm.get("type"), "mine")
+
+    def test_bad_kind_raises(self):
+        with tempfile.TemporaryDirectory() as d:
+            cfg = Config(_path=Path(d) / "config.yaml")
+            with self.assertRaises(ValueError):
+                repro.build_experiment_workspace("T", "n", "X", "t", cfg, kind="bogus")
+
+    def test_sync_yaml_always_includes_results_layout(self):
+        with tempfile.TemporaryDirectory() as d:
+            cfg = Config(_path=Path(d) / "config.yaml")
+            ws, _ = repro.build_experiment_workspace("T", "n", "X", "t", cfg, kind="repro")
+            import yaml as _yaml
+            spec = _yaml.safe_load((ws / "sync.yaml").read_text(encoding="utf-8"))
+            self.assertIn("RESULTS_LAYOUT.md", spec["push"])
+            self.assertTrue(all(p.startswith("results/") for p in spec["pull"]))
 
     def test_draft_goes_to_draft_notes(self):
         with tempfile.TemporaryDirectory() as d:
             cfg = Config(_path=Path(d) / "config.yaml")
-            ws, _ = repro.build_repro_workspace(
-                "T", "papers/X/T", "X", "t", cfg, draft=True,
+            ws, _ = repro.build_experiment_workspace(
+                "T", "papers/X/T", "X", "t", cfg, kind="repro", draft=True,
             )
             self.assertIn("draft_notes", str(ws))
 
     def test_skip_existing_without_overwrite(self):
         with tempfile.TemporaryDirectory() as d:
             cfg = Config(_path=Path(d) / "config.yaml")
-            repro.build_repro_workspace("T", "n", "X", "t", cfg)
-            _, created = repro.build_repro_workspace("T", "n", "X", "t", cfg)
+            repro.build_experiment_workspace("T", "n", "X", "t", cfg, kind="repro")
+            _, created = repro.build_experiment_workspace("T", "n", "X", "t", cfg, kind="repro")
             self.assertEqual(created, [])  # already exists, skipped
 
 
@@ -118,7 +154,7 @@ class TestConfigHardwareProfiles(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             cfg_path = Path(d) / "config.yaml"
             cfg_path.write_text(
-                "repro_dir: repro\n"
+                "experiments_dir: experiments\n"
                 "hardware_profiles:\n"
                 "  a100-40g:\n"
                 "    gpu_model: A100-40GB\n"
@@ -128,7 +164,7 @@ class TestConfigHardwareProfiles(unittest.TestCase):
                 encoding="utf-8",
             )
             cfg = load_config(str(cfg_path))
-            self.assertEqual(cfg.repro_dir, "repro")
+            self.assertEqual(cfg.experiments_dir, "experiments")
             self.assertEqual(len(cfg.hardware_profiles), 1)
             p = cfg.find_profile("a100-40g")
             self.assertIsNotNone(p)
@@ -141,7 +177,32 @@ class TestConfigHardwareProfiles(unittest.TestCase):
             cfg_path.write_text("language: zh\n", encoding="utf-8")
             cfg = load_config(str(cfg_path))
             self.assertEqual(cfg.hardware_profiles, [])
-            self.assertEqual(cfg.repro_dir, "repro")  # default value
+            self.assertEqual(cfg.experiments_dir, "experiments")  # default value
+
+    def test_legacy_repro_dir_still_read(self):
+        # backward compat: an old config.yaml with repro_dir maps onto experiments_dir
+        with tempfile.TemporaryDirectory() as d:
+            cfg_path = Path(d) / "config.yaml"
+            cfg_path.write_text("repro_dir: repro\n", encoding="utf-8")
+            cfg = load_config(str(cfg_path))
+            self.assertEqual(cfg.experiments_dir, "repro")
+
+    def test_parse_remotes(self):
+        with tempfile.TemporaryDirectory() as d:
+            cfg_path = Path(d) / "config.yaml"
+            cfg_path.write_text(
+                "remotes:\n"
+                "  gpu-a100:\n"
+                "    host: gpu-a100\n"
+                "    remote_repro_root: /data/helix-experiments\n"
+                "    hardware_profile: a100-8x40g\n",
+                encoding="utf-8",
+            )
+            cfg = load_config(str(cfg_path))
+            r = cfg.find_remote("gpu-a100")
+            self.assertIsNotNone(r)
+            self.assertEqual(r.remote_repro_root, "/data/helix-experiments")
+            self.assertIsNone(cfg.find_remote("nope"))
 
 
 if __name__ == "__main__":

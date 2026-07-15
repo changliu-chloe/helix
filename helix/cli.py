@@ -59,13 +59,15 @@ def cmd_migrate(args: argparse.Namespace) -> int:
     if cfg is None:
         return 1
 
-    report, logs = migrate_mod.run_migrate(cfg, scope=args.scope)
+    report, logs = migrate_mod.run_migrate(cfg, scope=args.scope, do_move=args.yes)
     for line in logs:
         _err(line)
 
     # Summary: what was enabled + what you still need to do by hand.
     _err(f"migrate 完成：新链 {len(report.linked)} 个 skill，清理 {len(report.pruned)} 个失效软链")
     todo: list[str] = []
+    if report.repro_rename_pending:
+        todo.append("发现旧 repro/ 复现目录，新版改用 experiments/。跑 `helix migrate --yes` 搬迁（只搬不删、先校验）")
     if report.new_config_keys:
         keys = "、".join(report.new_config_keys)
         todo.append(f"config.yaml 可新增字段（参考 config.example.yaml）：{keys}")
@@ -402,54 +404,93 @@ def cmd_repro(args: argparse.Namespace) -> int:
         return 0
 
     if args.action == "new":
-        if not args.target:
-            print("[helix] repro new 需要笔记路径或 arXiv id", file=sys.stderr)
-            return 1
-        # Resolve title / domain / note_rel: first treat it as an existing note file, otherwise as an arXiv id
-        title = domain = note_rel = None
-        p = Path(args.target)
-        if p.exists() and p.suffix == ".md":
-            from . import frontmatter
-            fm = frontmatter.meta(p.read_text(encoding="utf-8", errors="replace"))
-            title = fm.get("title") or p.stem
-            doms = fm.get("domains") or []
-            domain = args.domain or (doms[0] if doms else "未分类")
-            try:
-                note_rel = str(p.resolve().relative_to(cfg.notes_path)).replace("\\", "/")
-            except ValueError:
-                note_rel = str(p).replace("\\", "/")
-        else:
-            from .adapters import arxiv
-            try:
-                paper = arxiv.get_by_id(args.target)
-            except RuntimeError as e:
-                print(str(e), file=sys.stderr)
-                return 1
-            if paper is None:
-                print(f"[helix] 未找到论文，也不是已存在笔记：{args.target}", file=sys.stderr)
-                return 1
-            title = paper.title
+        mine = bool(getattr(args, "mine", None))
+        if mine:
+            # my own experiment: target is optional (a reference paper note/id); --mine gives the name
+            title = args.mine
             domain = args.domain or "未分类"
-            note_rel = f"papers/{domain}/{title}"
+            note_rel = ""
+            if args.target:
+                title, domain, note_rel = _resolve_target(cfg, args.target, args.domain)
+                title = args.mine  # experiment name wins as the title
+            kind = "mine"
+        else:
+            if not args.target:
+                print("[helix] exp new 需要笔记路径或 arXiv id（自己的实验用 --mine \"<名字>\"）", file=sys.stderr)
+                return 1
+            title, domain, note_rel = _resolve_target(cfg, args.target, args.domain)
+            if title is None:
+                return 1
+            kind = "repro"
 
         short = args.name or repro_mod.short_name(title)
         try:
-            ws, created = repro_mod.build_repro_workspace(
+            ws, created = repro_mod.build_experiment_workspace(
                 title, note_rel, domain, short, cfg,
-                draft=args.draft, overwrite=args.overwrite,
+                kind=kind, draft=args.draft, overwrite=args.overwrite,
             )
-        except OSError as e:
+        except (OSError, ValueError) as e:
             print(f"[helix] {e}", file=sys.stderr)
             return 1
-        result = {"workspace": str(ws), "created": created, "title": title, "domain": domain}
+        result = {"workspace": str(ws), "created": created, "title": title, "domain": domain, "kind": kind}
         print(json.dumps(result, ensure_ascii=False, indent=2))
-        where = "draft_notes" if args.draft else "repro"
+        where = "draft_notes" if args.draft else "experiments"
         msg = f"新建 {created}" if created else "已存在（跳过，可加 --overwrite）"
-        print(f"[helix] 复现工作区（{where}）：{ws} — {msg}", file=sys.stderr)
+        print(f"[helix] 实验工作区（{where}，{kind}）：{ws} — {msg}", file=sys.stderr)
         print(str(ws))
         return 0
 
+    if args.action in ("push", "pull"):
+        from . import sync as sync_mod
+
+        if not args.target:
+            print(f"[helix] exp {args.action} 需要工作区路径", file=sys.stderr)
+            return 1
+        ws = Path(args.target)
+        if not ws.is_dir():
+            print(f"[helix] 工作区不存在或不是目录：{ws}", file=sys.stderr)
+            return 1
+        try:
+            fn = sync_mod.push if args.action == "push" else sync_mod.pull
+            res = fn(cfg, ws, dry_run=args.dry_run)
+        except (FileNotFoundError, ValueError) as e:
+            print(f"[helix] {e}", file=sys.stderr)
+            return 1
+        for w in res.warnings:
+            print(f"[helix] ⚠ {w}", file=sys.stderr)
+        tag = "（dry-run 预览，未实际传输）" if res.dry_run else ""
+        print(f"[helix] exp {res.direction} → remote '{res.remote_name}':{res.remote_dir} {tag}", file=sys.stderr)
+        return 0 if res.returncode == 0 else 1
+
     return 2
+
+
+def _resolve_target(cfg, target: str, domain_arg: str | None):
+    """Resolve (title, domain, note_rel) from an existing note file or an arXiv id. Returns (None, None, None) on failure."""
+    p = Path(target)
+    if p.exists() and p.suffix == ".md":
+        from . import frontmatter
+        fm = frontmatter.meta(p.read_text(encoding="utf-8", errors="replace"))
+        title = fm.get("title") or p.stem
+        doms = fm.get("domains") or []
+        domain = domain_arg or (doms[0] if doms else "未分类")
+        try:
+            note_rel = str(p.resolve().relative_to(cfg.notes_path)).replace("\\", "/")
+        except ValueError:
+            note_rel = str(p).replace("\\", "/")
+        return title, domain, note_rel
+
+    from .adapters import arxiv
+    try:
+        paper = arxiv.get_by_id(target)
+    except RuntimeError as e:
+        print(str(e), file=sys.stderr)
+        return None, None, None
+    if paper is None:
+        print(f"[helix] 未找到论文，也不是已存在笔记：{target}", file=sys.stderr)
+        return None, None, None
+    domain = domain_arg or "未分类"
+    return paper.title, domain, f"papers/{domain}/{paper.title}"
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -466,9 +507,11 @@ def build_parser() -> argparse.ArgumentParser:
                     help="project: 本项目 .claude/skills + .agents/skills（默认，含 AGENTS.md 软链）；global: ~/.claude/skills + ~/.agents/skills")
     sp.set_defaults(func=cmd_init)
 
-    sp = sub.add_parser("migrate", help="git pull 后追平：重链 skill、清失效软链、提示 config/依赖/索引更新")
+    sp = sub.add_parser("migrate", help="git pull 后追平：重链 skill、清失效软链、提示 config/依赖/索引更新、搬迁 repro→experiments")
     sp.add_argument("--scope", choices=["project", "global"], default="project",
                     help="project: 本项目 .claude/skills（默认）；global: ~/.claude/skills")
+    sp.add_argument("--yes", action="store_true",
+                    help="执行存储搬迁（repro/ → experiments/，只搬不删、先校验后核对）；省略则只提示")
     sp.set_defaults(func=cmd_migrate)
 
     sp = sub.add_parser("search", help="检索并打分论文（arxiv/s2/dblp）")
@@ -506,9 +549,9 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--overwrite", action="store_true", help="new: 覆盖已存在的综述骨架")
     sp.set_defaults(func=cmd_review)
 
-    sp = sub.add_parser("repro", help="论文复现：vram 显存判级 / new 建复现工作区")
-    sp.add_argument("action", choices=["vram", "new"])
-    sp.add_argument("target", nargs="?", help="new: 笔记路径或 arXiv id")
+    sp = sub.add_parser("exp", help="实验/复现：vram 显存判级 / new 建工作区 / push·pull 本地-远程传送")
+    sp.add_argument("action", choices=["vram", "new", "push", "pull"])
+    sp.add_argument("target", nargs="?", help="new: 笔记路径或 arXiv id；push/pull: 工作区路径")
     sp.add_argument("--params", type=float, help="vram: 模型参数量（十亿，如 7 表示 7B）")
     sp.add_argument("--dtype", default="fp16", help="vram: 权重精度 fp32/fp16/bf16/fp8/int8/int4")
     sp.add_argument("--ctx", type=int, default=2048, help="vram: 上下文长度")
@@ -519,8 +562,10 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--profile", help="vram: 只判这台硬件档；省略判 config 全部")
     sp.add_argument("--name", help="new: 工作区短名（省略从标题自动生成）")
     sp.add_argument("--domain", help="new: 研究方向（归档子目录）")
-    sp.add_argument("--draft", action="store_true", help="new: 落 draft_notes/ 而非 repro/")
+    sp.add_argument("--mine", metavar="实验名", help="new: 建我自己的实验（type:mine，无 setup.md）；target 可选为对标论文")
+    sp.add_argument("--draft", action="store_true", help="new: 落 draft_notes/ 而非 experiments/")
     sp.add_argument("--overwrite", action="store_true", help="new: 覆盖已有骨架")
+    sp.add_argument("--dry-run", action="store_true", help="push/pull: 预览传输，不实际改动")
     sp.set_defaults(func=cmd_repro)
 
     sp = sub.add_parser("index", help="FTS5 索引：build / search <query>")
