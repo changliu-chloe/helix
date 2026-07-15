@@ -12,7 +12,7 @@ from pathlib import Path
 
 import yaml
 
-from . import frontmatter
+from . import frontmatter, naming
 from .config import Config
 from .models import Paper
 
@@ -36,16 +36,48 @@ COMMON_WORDS = {
 # --------------------------------------------------------------------------- #
 
 def title_to_filename(title: str) -> str:
-    """Convert a paper title to a safe filename (without extension)."""
-    name = re.sub(r'[ /\\:*?"<>|]+', "_", title).strip("_")
-    return name or "untitled"
+    """Convert a paper title to a short, safe filename (without extension).
+
+    Keeps note filenames short: an author-coined name before the colon, else
+    the first few words. Full title is preserved in the note frontmatter.
+    """
+    return naming.short_title(title)
 
 
-def note_path_for(paper: Paper, cfg: Config) -> Path:
-    """Return a single note path split by domain: papers/<domain>/<title>.md."""
+def _note_rel(path: Path, cfg: Config) -> str:
+    """Note path relative to notes_path, forward-slashed — the form embedded in wikilinks."""
+    try:
+        return str(Path(path).resolve().relative_to(cfg.notes_path.resolve())).replace("\\", "/")
+    except ValueError:
+        return str(path).replace("\\", "/")
+
+
+def note_dir_for(paper: Paper, cfg: Config) -> Path:
+    """Domain sub-directory a paper's note lives in: papers/<domain>/."""
     domain = paper.matched_domains[0] if paper.matched_domains else "未分类"
-    domain_dir = re.sub(r'[ /\\:*?"<>|]+', "_", domain).strip("_") or "未分类"
-    return cfg.papers_path / domain_dir / f"{title_to_filename(paper.title)}.md"
+    domain_dir = naming.safe_filename(domain, "未分类")
+    return cfg.papers_path / domain_dir
+
+
+def note_path_for(paper: Paper, cfg: Config, name: str | None = None) -> Path:
+    """Return a single note path split by domain: papers/<domain>/<short>.md.
+
+    `name` overrides the auto-derived short name (agent-chosen after reading).
+    If the short name collides with an existing note for a *different* paper
+    (different arxiv_id in frontmatter), append the paper id to disambiguate —
+    so short names stay the norm but two distinct papers never share a file.
+    """
+    stem = naming.safe_filename(name) if name else title_to_filename(paper.title)
+    base = note_dir_for(paper, cfg) / f"{stem}.md"
+    if base.exists() and paper.paper_id:
+        try:
+            existing_id = frontmatter.meta(base.read_text(encoding="utf-8", errors="replace")).get("arxiv_id")
+        except OSError:
+            existing_id = None
+        if existing_id and str(existing_id) != str(paper.paper_id):
+            safe_id = naming.safe_filename(str(paper.paper_id))
+            return base.with_name(f"{base.stem}_{safe_id}.md")
+    return base
 
 
 # --------------------------------------------------------------------------- #
@@ -147,12 +179,14 @@ def build_note_skeleton(paper: Paper, lang: str = "zh") -> str:
 """
 
 
-def write_note(paper: Paper, cfg: Config, overwrite: bool = False) -> tuple[Path, bool]:
+def write_note(paper: Paper, cfg: Config, overwrite: bool = False, name: str | None = None) -> tuple[Path, bool]:
     """Write a single note skeleton. Returns (path, whether newly created). Skips if it exists and overwrite is False.
 
-    After writing, verify the file was actually persisted and is non-empty, else raise OSError -- avoids "reporting success without writing".
+    `name` overrides the title-derived short filename. After writing, verify the
+    file was actually persisted and is non-empty, else raise OSError -- avoids
+    "reporting success without writing".
     """
-    path = note_path_for(paper, cfg)
+    path = note_path_for(paper, cfg, name=name)
     if path.exists() and not overwrite:
         return path, False
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -162,6 +196,44 @@ def write_note(paper: Paper, cfg: Config, overwrite: bool = False) -> tuple[Path
     if not path.exists() or path.stat().st_size == 0:
         raise OSError(f"笔记写入失败，文件未落盘：{path}")
     return path, True
+
+
+def rename_note(old_path: Path, new_name: str, cfg: Config, *, overwrite: bool = False) -> tuple[Path, int]:
+    """Rename a note in place and fix inbound [[wikilinks]] across the vault.
+
+    Used after deep-reading: give a descriptive-titled paper a short name based
+    on its method/innovation. `new_name` is sanitized to a short slug; the note
+    stays in the same domain directory. Returns (new path, # notes whose links
+    were updated). Refuses to clobber a different existing file unless overwrite.
+    Assets live under assets/<id>/ keyed by arxiv id, so they are unaffected.
+    """
+    old_path = Path(old_path)
+    if not old_path.exists():
+        raise OSError(f"笔记不存在：{old_path}")
+    new_stem = naming.safe_filename(new_name)
+    new_path = old_path.with_name(f"{new_stem}.md")
+    if new_path.resolve() == old_path.resolve():
+        return new_path, 0
+    if new_path.exists() and not overwrite:
+        raise OSError(f"目标文件名已存在：{new_path}（换个名字或加 --overwrite）")
+
+    old_rel = _note_rel(old_path, cfg)
+    new_rel = _note_rel(new_path, cfg)
+    old_path.rename(new_path)
+
+    # Rewrite inbound wikilinks: [[papers/.../old.md|text]] embeds old_rel verbatim.
+    updated = 0
+    for md in iter_note_files(cfg.papers_path):
+        try:
+            content = md.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        if old_rel and old_rel in content:
+            new_content = content.replace(old_rel, new_rel)
+            if new_content != content:
+                md.write_text(new_content, encoding="utf-8")
+                updated += 1
+    return new_path, updated
 
 
 # --------------------------------------------------------------------------- #

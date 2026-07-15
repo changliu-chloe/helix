@@ -227,15 +227,10 @@ def fit_check_all(est: VramEstimate, cfg: Config) -> list[FitResult]:
 # --------------------------------------------------------------------------- #
 
 def short_name(title: str) -> str:
-    """Generate a concise workspace directory name from a paper title: prefer the short title before the colon, else take the first few words."""
-    import re
+    """Concise workspace directory name from a paper title (shared short-title logic)."""
+    from . import naming
 
-    if not title:
-        return "untitled"
-    head = title.split(":")[0].strip()
-    if not (2 <= len(head) <= 30):
-        head = " ".join(title.split()[:4])
-    return re.sub(r'[ /\\:*?"<>|]+', "_", head).strip("_") or "untitled"
+    return naming.short_title(title)
 
 
 def _first_profile_name(cfg: Config) -> str:
