@@ -10,6 +10,9 @@ notes/
 
 # helix init 生成的本机软链（含绝对路径，每台机器自行 `helix init` 重建）
 .claude/
+.agents/
+# AGENTS.md 是指向 CLAUDE.md 的软链（由 helix init 生成），规约单一真源在 CLAUDE.md
+/AGENTS.md
 
 # Python
 __pycache__/

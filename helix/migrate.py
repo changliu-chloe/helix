@@ -127,11 +127,18 @@ def run_migrate(cfg: Config, scope: str = "project") -> tuple[MigrateReport, lis
     logs: list[str] = []
     report = MigrateReport()
 
-    # 1. Re-link skills + prune stale links (fixes "add-only" drift when skills are added/removed/renamed).
+    # 1. Re-link skills (into both .claude/skills + .agents/skills) + AGENTS.md -> CLAUDE.md,
+    #    then prune stale links. Fixes "add-only" drift when skills are added/removed/renamed,
+    #    and brings pre-existing checkouts up to the Codex/Cursor/Trae compat layer.
     for line in init.link_skills(scope=scope):
         logs.append(line)
         if line.startswith("已链接"):
             report.linked.append(line)
+    if scope != "global":
+        for line in init.link_agents_md():
+            logs.append(line)
+            if line.startswith("已链接"):
+                report.linked.append(line)
     for line in init.prune_stale_skill_links(scope=scope):
         logs.append(line)
         report.pruned.append(line)
