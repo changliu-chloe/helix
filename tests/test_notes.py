@@ -1,4 +1,4 @@
-"""笔记生成与 wikilink 单元测试。"""
+"""Note generation and wikilink unit tests."""
 
 import unittest
 
@@ -30,7 +30,7 @@ class TestNotePath(unittest.TestCase):
         cfg = Config(notes_dir="notes", papers_subdir="papers")
         p = Paper(paper_id="1", title="CoT-VLA: x", matched_domains=["VLA模型"])
         path = notes.note_path_for(p, cfg)
-        # 路径锚定 base_dir（绝对），只验证相对结构
+        # path anchored to base_dir (absolute); only verify the relative structure
         self.assertTrue(str(path).endswith("notes/papers/VLA模型/CoT-VLA_x.md"))
         self.assertTrue(path.is_absolute())
 
@@ -51,14 +51,14 @@ class TestWriteNote(unittest.TestCase):
             path, created = notes.write_note(p, cfg)
             self.assertTrue(created)
             self.assertTrue(path.exists() and path.stat().st_size > 0)
-            self.assertIn("新方向X", str(path))  # 用指定方向归档
-            # 再写不覆盖
+            self.assertIn("新方向X", str(path))  # archived under the specified domain
+            # writing again does not overwrite
             path2, created2 = notes.write_note(p, cfg)
             self.assertFalse(created2)
             self.assertEqual(path, path2)
 
     def test_absolute_notes_dir_preserved(self):
-        # 用户配绝对路径（如外部 Obsidian vault）应原样保留
+        # a user-configured absolute path (e.g. an external Obsidian vault) should be preserved as-is
         cfg = Config(notes_dir="/tmp/my_vault", papers_subdir="papers")
         p = Paper(paper_id="1", title="x", matched_domains=["D"])
         self.assertTrue(str(notes.note_path_for(p, cfg)).startswith("/tmp/my_vault/papers/D/"))
@@ -73,7 +73,7 @@ class TestLinkKeywords(unittest.TestCase):
         self.assertEqual(out, "受 [[papers/VLA/CoT-VLA.md|CoT-VLA]] 启发")
 
     def test_shared_keyword_skipped(self):
-        # 同一关键词指向多篇论文 -> 太泛，不链接
+        # a keyword pointing to multiple papers -> too broad, don't link
         idx = {"vla": ["a.md", "b.md"]}
         out = notes.link_keywords_in_text("about VLA models", idx)
         self.assertEqual(out, "about VLA models")

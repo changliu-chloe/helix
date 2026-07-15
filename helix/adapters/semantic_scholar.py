@@ -1,7 +1,8 @@
-"""Semantic Scholar 来源适配器。
+"""Semantic Scholar source adapter.
 
-用 S2 Graph API 检索论文，带引用数（喂给打分的热度维度）。
-返回统一的 Paper。匿名接口有限流，可在 config 配 api_key。
+Searches papers via the S2 Graph API, carrying citation counts (feeding the
+popularity dimension of scoring). Returns a unified Paper. The anonymous
+endpoint is rate-limited; an api_key can be set in config.
 """
 
 from __future__ import annotations
@@ -16,10 +17,10 @@ from ..models import Paper
 S2_SEARCH_API = "https://api.semanticscholar.org/graph/v1/paper/search"
 S2_FIELDS = "title,abstract,publicationDate,year,citationCount,influentialCitationCount,url,authors,externalIds"
 
-# 无 api_key 时的限流参数（匿名接口限流激进：约每几秒才允许一次）
-NO_KEY_PRE_REQUEST_DELAY = 3.0   # 每次请求前先等待，主动节流
-NO_KEY_RATE_LIMIT_WAIT = 30      # 命中 429 后的等待
-KEYED_RATE_LIMIT_WAIT = 5        # 有 key 时 429 等待更短
+# Rate-limit params when no api_key (the anonymous endpoint throttles aggressively: roughly one call every few seconds)
+NO_KEY_PRE_REQUEST_DELAY = 3.0   # wait before each request to throttle proactively
+NO_KEY_RATE_LIMIT_WAIT = 30      # wait after hitting a 429
+KEYED_RATE_LIMIT_WAIT = 5        # shorter 429 wait when a key is present
 
 
 def _request(url: str, api_key: str = "", max_retries: int = 4, timeout: int = 20) -> dict:
@@ -27,7 +28,7 @@ def _request(url: str, api_key: str = "", max_retries: int = 4, timeout: int = 2
     if api_key:
         headers["x-api-key"] = api_key
     rate_wait = KEYED_RATE_LIMIT_WAIT if api_key else NO_KEY_RATE_LIMIT_WAIT
-    # 无 key 时请求前主动节流，降低触发 429 的概率
+    # When no key, throttle before requesting to lower the chance of triggering a 429
     if not api_key and NO_KEY_PRE_REQUEST_DELAY > 0:
         time.sleep(NO_KEY_PRE_REQUEST_DELAY)
     last_err: Exception | None = None
@@ -38,7 +39,7 @@ def _request(url: str, api_key: str = "", max_retries: int = 4, timeout: int = 2
                 return json.loads(resp.read().decode("utf-8"))
         except urllib.error.HTTPError as e:  # noqa: PERF203
             last_err = e
-            # 429 限流：等更久（指数退避，封顶 rate_wait）
+            # 429 rate limit: wait longer (exponential backoff, capped at rate_wait)
             wait = min(rate_wait, (2 ** attempt) * 5) if e.code == 429 else (2 ** attempt) * 2
             if attempt < max_retries - 1:
                 time.sleep(wait)
@@ -72,7 +73,7 @@ def _to_paper(item: dict) -> Paper | None:
 
 
 def search(query: str, limit: int = 50, api_key: str = "") -> list[Paper]:
-    """按查询词检索 S2，返回带引用数的 Paper 列表（按引用数降序）。"""
+    """Search S2 by query, returning a list of Paper with citation counts (descending by citation count)."""
     params = {"query": query, "limit": str(min(limit, 100)), "fields": S2_FIELDS}
     url = f"{S2_SEARCH_API}?{urllib.parse.urlencode(params)}"
     data = _request(url, api_key=api_key)

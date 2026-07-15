@@ -1,27 +1,28 @@
-"""helix init：把项目 skills 接入 Claude Code 的发现路径。
+"""helix init: wire project skills into Claude Code's discovery path.
 
-创建 .claude/skills/ 下指向 skills/ 里各 skill 的软链，让外层 agent
-（Claude Code 等）能自然语言触发这些 skill。幂等、可重复执行。
+Creates symlinks under .claude/skills/ pointing to each skill in skills/, so an
+outer agent (Claude Code, etc.) can trigger these skills via natural language.
+Idempotent and safe to run repeatedly.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 
-# 项目根 = 本文件的上两级（helix/init.py -> helix/ -> 项目根）
+# Project root = two levels up from this file (helix/init.py -> helix/ -> project root)
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 SKILLS_SRC = PROJECT_ROOT / "skills"
 
 
 def _link_scope_dir(scope: str) -> Path:
-    """返回 .claude/skills 目标目录：project=项目内，global=~/.claude/skills。"""
+    """Return the .claude/skills target dir: project=inside project, global=~/.claude/skills."""
     if scope == "global":
         return Path.home() / ".claude" / "skills"
     return PROJECT_ROOT / ".claude" / "skills"
 
 
 def list_skill_names() -> list[str]:
-    """列出 skills/ 下所有含 SKILL.md 的 skill 名（总入口 helix 排在最前）。"""
+    """List all skill names under skills/ that contain SKILL.md (the main entry 'helix' comes first)."""
     if not SKILLS_SRC.exists():
         return []
     names = [d.name for d in sorted(SKILLS_SRC.iterdir()) if d.is_dir() and (d / "SKILL.md").exists()]
@@ -32,7 +33,7 @@ def list_skill_names() -> list[str]:
 
 
 def link_skills(scope: str = "project") -> list[str]:
-    """为每个 skill 建软链到 .claude/skills/<name>。返回操作日志。"""
+    """Create a symlink for each skill at .claude/skills/<name>. Returns an operation log."""
     logs: list[str] = []
     if not SKILLS_SRC.exists():
         return [f"未找到 skills 源目录：{SKILLS_SRC}"]
@@ -50,9 +51,9 @@ def link_skills(scope: str = "project") -> list[str]:
             if link.resolve() == target:
                 logs.append(f"已存在（跳过）：{link} -> {target}")
                 continue
-            link.unlink()  # 指向别处的旧软链，重建
+            link.unlink()  # stale symlink pointing elsewhere, rebuild it
         elif link.exists():
-            # 真实目录/文件，不覆盖，交给用户处理
+            # real dir/file, don't overwrite, leave it for the user to handle
             logs.append(f"⚠ 已存在同名非软链，跳过（请手动处理）：{link}")
             continue
 

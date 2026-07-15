@@ -1,19 +1,32 @@
-"""helix 命令行入口。子命令：search / fetch / note / index / status。
+"""helix command-line entry point. Subcommands: search / fetch / note / index / status.
 
-迭代 0 仅搭骨架：status 可用，其余子命令占位（后续迭代填充）。
+Iteration 0 is scaffolding only: status works, the other subcommands are placeholders (filled in later iterations).
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import sys
+from pathlib import Path
 
 from . import __version__
 
 
-def _not_implemented(name: str) -> int:
-    print(f"[helix] 子命令 '{name}' 尚未实现（将在后续迭代中加入）", file=sys.stderr)
-    return 2
+def _err(msg: str) -> None:
+    """Unified prefixed output to stderr."""
+    print(f"[helix] {msg}", file=sys.stderr)
+
+
+def _load_cfg(args: argparse.Namespace):
+    """Load config, returning None on failure (error already printed). Removes the repeated try/except boilerplate in each command."""
+    from .config import load_config
+
+    try:
+        return load_config(args.config)
+    except FileNotFoundError as e:
+        print(str(e), file=sys.stderr)
+        return None
 
 
 def cmd_init(args: argparse.Namespace) -> int:
@@ -34,12 +47,8 @@ def cmd_init(args: argparse.Namespace) -> int:
 
 
 def cmd_status(args: argparse.Namespace) -> int:
-    from .config import load_config
-
-    try:
-        cfg = load_config(args.config)
-    except FileNotFoundError as e:
-        print(str(e), file=sys.stderr)
+    cfg = _load_cfg(args)
+    if cfg is None:
         return 1
 
     print(f"helix v{__version__}")
@@ -53,129 +62,42 @@ def cmd_status(args: argparse.Namespace) -> int:
     return 0
 
 
-def _dedup_papers(papers: list) -> list:
-    """按 paper_id 优先、标题归一化其次去重。保留先出现的（通常引用数更高/更相关）。"""
-    import re
-
-    seen_ids: set[str] = set()
-    seen_titles: set[str] = set()
-    out = []
-    for p in papers:
-        pid = (p.paper_id or "").strip()
-        if pid:
-            if pid in seen_ids:
-                continue
-            seen_ids.add(pid)
-            out.append(p)
-        else:
-            norm = re.sub(r"[^a-z0-9\s]", "", (p.title or "").lower()).strip()
-            if norm and norm in seen_titles:
-                continue
-            if norm:
-                seen_titles.add(norm)
-            out.append(p)
-    return out
-
-
 def cmd_search(args: argparse.Namespace) -> int:
-    import json
+    from . import pipeline
 
-    from .config import load_config
-    from .score import score_papers
-    from .sources import arxiv
-
-    try:
-        cfg = load_config(args.config)
-    except FileNotFoundError as e:
-        print(str(e), file=sys.stderr)
+    cfg = _load_cfg(args)
+    if cfg is None:
         return 1
 
     sources = [s.strip() for s in args.source.split(",") if s.strip()]
-    known = {"arxiv", "s2", "dblp"}
-    unknown = [s for s in sources if s not in known]
+    unknown = [s for s in sources if s not in pipeline.KNOWN_SOURCES]
     if unknown:
-        print(f"[helix] 未知来源 {unknown}，支持：arxiv,s2,dblp", file=sys.stderr)
+        _err(f"未知来源 {unknown}，支持：{','.join(sorted(pipeline.KNOWN_SOURCES))}")
         return 1
 
-    papers: list = []
-    for src in sources:
-        try:
-            if src == "arxiv":
-                if args.query:
-                    print(f"[helix] [arxiv] 关键词检索：{args.query}", file=sys.stderr)
-                    kws = [k.strip() for k in args.query.split(",") if k.strip()]
-                    got = arxiv.search_by_keywords(kws, days=args.days, max_results=args.max_results)
-                else:
-                    cats = cfg.all_categories()
-                    if not cats:
-                        print("[helix] config 无 arXiv 分类且未提供查询词，跳过 arxiv", file=sys.stderr)
-                        got = []
-                    else:
-                        days = args.days if args.days is not None else 30
-                        print(f"[helix] [arxiv] 按 config 分类检索（近 {days} 天）：{','.join(cats)}", file=sys.stderr)
-                        got = arxiv.search_by_categories(cats, days=days, max_results=args.max_results)
-            elif src == "s2":
-                from .sources import semantic_scholar
+    result = pipeline.search_papers(
+        cfg, args.query, sources,
+        top_n=args.top_n, days=args.days, max_results=args.max_results,
+        log=_err,
+    )
+    print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
 
-                q = args.query or " ".join(cfg.domains[0].keywords[:3]) if cfg.domains else args.query
-                if not q:
-                    print("[helix] s2 需要查询词或 config 领域，跳过 s2", file=sys.stderr)
-                    got = []
-                else:
-                    print(f"[helix] [s2] 检索：{q}", file=sys.stderr)
-                    got = semantic_scholar.search(q, limit=args.max_results, api_key=cfg.semantic_scholar_api_key)
-            else:  # dblp
-                from .sources import dblp
-
-                q = args.query or (" ".join(cfg.domains[0].keywords[:3]) if cfg.domains else "")
-                if not q:
-                    print("[helix] dblp 需要查询词或 config 领域，跳过 dblp", file=sys.stderr)
-                    got = []
-                else:
-                    print(f"[helix] [dblp] 检索：{q}", file=sys.stderr)
-                    got = dblp.search(q, limit=args.max_results)
-        except RuntimeError as e:
-            print(f"[helix] [{src}] 失败（跳过）：{e}", file=sys.stderr)
-            got = []
-        print(f"[helix] [{src}] 拉回 {len(got)} 篇", file=sys.stderr)
-        papers.extend(got)
-
-    papers = _dedup_papers(papers)
-    print(f"[helix] 合并去重后 {len(papers)} 篇，开始打分筛选", file=sys.stderr)
-    scored = score_papers(papers, cfg)
-    top = scored[: args.top_n]
-
-    output = {
-        "query": args.query or "",
-        "sources": sources,
-        "total_fetched": len(papers),
-        "total_scored": len(scored),
-        "top_papers": [p.to_dict() for p in top],
-    }
-    print(json.dumps(output, ensure_ascii=False, indent=2))
-
-    for i, p in enumerate(top, 1):
-        print(f"  {i}. [{p.score_final}] ({p.source}) {p.title[:60]}", file=sys.stderr)
+    for i, p in enumerate(result.top_papers, 1):
+        _err(f"  {i}. [{p.score_final}] ({p.source}) {p.title[:60]}")
     return 0
 
 
 def cmd_fetch(args: argparse.Namespace) -> int:
-    import json
-    from pathlib import Path
-
-    from .config import load_config
     from .score import relevance_score
-    from .sources import arxiv, fulltext
+    from .adapters import arxiv, fulltext
 
-    try:
-        cfg = load_config(args.config)
-    except FileNotFoundError as e:
-        print(str(e), file=sys.stderr)
+    cfg = _load_cfg(args)
+    if cfg is None:
         return 1
 
     arxiv_id = args.paper_id.strip()
 
-    # 抓元数据，定领域 -> assets 目录
+    # Fetch metadata, determine domain -> assets directory
     try:
         paper = arxiv.get_by_id(arxiv_id)
     except RuntimeError as e:
@@ -191,7 +113,7 @@ def cmd_fetch(args: argparse.Namespace) -> int:
     assets = cfg.assets_path(domain or "未分类", arxiv_id)
     assets.mkdir(parents=True, exist_ok=True)
 
-    # 1. 源码包高清图（存档用，多为 pdf 矢量图，不用于 markdown 内联）
+    # 1. High-res figures from the source tarball (for archiving; mostly pdf vector graphics, not for markdown inlining)
     source_figures: list = []
     try:
         print(f"[helix] 下载 arXiv 源码包提取高清图：{arxiv_id}", file=sys.stderr)
@@ -200,7 +122,7 @@ def cmd_fetch(args: argparse.Namespace) -> int:
     except Exception as e:  # noqa: BLE001
         print(f"[helix] 源码图提取失败（跳过）：{e}", file=sys.stderr)
 
-    # 2. MinerU 全文 + 可渲染插图（jpg，供笔记内联）
+    # 2. MinerU full text + renderable figures (jpg, for note inlining)
     md_path = None
     rendered_images: list = []
     if not args.figures_only and not args.no_mineru:
@@ -222,7 +144,7 @@ def cmd_fetch(args: argparse.Namespace) -> int:
                 print(f"[helix] MinerU 全文解析失败（回退到摘要）：{e}", file=sys.stderr)
 
     def _rel(p) -> str:
-        """相对 assets 目录的路径，便于笔记内联引用。"""
+        """Path relative to the assets directory, for inline references in notes."""
         try:
             return str(Path(p).relative_to(assets))
         except ValueError:
@@ -233,9 +155,9 @@ def cmd_fetch(args: argparse.Namespace) -> int:
         "domain": domain or "未分类",
         "assets_dir": str(assets),
         "fulltext": str(md_path) if md_path else None,
-        # 笔记内联用这套（可渲染 jpg，相对 assets 的路径如 images/fig1.jpg）
+        # Note inlining uses these (renderable jpg, path relative to assets like images/fig1.jpg)
         "rendered_images": [_rel(p) for p in rendered_images],
-        # 高清存档（多为 pdf，不建议内联渲染）
+        # High-res archive (mostly pdf, not recommended for inline rendering)
         "source_figures": [_rel(p) for p in source_figures],
     }
     print(json.dumps(result, ensure_ascii=False, indent=2))
@@ -244,23 +166,18 @@ def cmd_fetch(args: argparse.Namespace) -> int:
 
 
 def cmd_note(args: argparse.Namespace) -> int:
-    import json
-
     from . import notes as notes_mod
-    from .config import load_config
     from .score import relevance_score
 
-    try:
-        cfg = load_config(args.config)
-    except FileNotFoundError as e:
-        print(str(e), file=sys.stderr)
+    cfg = _load_cfg(args)
+    if cfg is None:
         return 1
 
     if args.action == "new":
         if not args.target:
-            print("[helix] note new 需要 arXiv id，例如：helix note new 2503.22020", file=sys.stderr)
+            _err("note new 需要 arXiv id，例如：helix note new 2503.22020")
             return 1
-        from .sources import arxiv
+        from .adapters import arxiv
 
         try:
             paper = arxiv.get_by_id(args.target)
@@ -270,7 +187,7 @@ def cmd_note(args: argparse.Namespace) -> int:
         if paper is None:
             print(f"[helix] 未找到论文：{args.target}", file=sys.stderr)
             return 1
-        # 领域归属：显式 --domain 优先（agent 可指定 config 里没有的新方向）；否则按相关性自动判定
+        # Domain assignment: explicit --domain takes precedence (an agent may specify a new domain not in config); otherwise auto-detect by relevance
         if args.domain:
             domain, matched = args.domain, []
         else:
@@ -295,13 +212,11 @@ def cmd_note(args: argparse.Namespace) -> int:
 
     if args.action == "link":
         if not args.target:
-            print("[helix] note link 需要文件路径，例如：helix note link notes/papers/VLA/xxx.md", file=sys.stderr)
+            _err("note link 需要文件路径，例如：helix note link notes/papers/VLA/xxx.md")
             return 1
-        from pathlib import Path
-
         target = Path(args.target)
         if not target.exists():
-            print(f"[helix] 文件不存在：{target}", file=sys.stderr)
+            _err(f"文件不存在：{target}")
             return 1
         index = notes_mod.scan_notes(cfg)
         added = notes_mod.link_file(target, index["keyword_to_notes"])
@@ -312,15 +227,10 @@ def cmd_note(args: argparse.Namespace) -> int:
 
 
 def cmd_index(args: argparse.Namespace) -> int:
-    import json
-
     from . import index as index_mod
-    from .config import load_config
 
-    try:
-        cfg = load_config(args.config)
-    except FileNotFoundError as e:
-        print(str(e), file=sys.stderr)
+    cfg = _load_cfg(args)
+    if cfg is None:
         return 1
 
     if args.action == "build":
@@ -353,21 +263,15 @@ def cmd_index(args: argparse.Namespace) -> int:
 
 
 def cmd_repro(args: argparse.Namespace) -> int:
-    import json
-    from pathlib import Path
-
     from . import repro as repro_mod
-    from .config import load_config
 
-    try:
-        cfg = load_config(args.config)
-    except FileNotFoundError as e:
-        print(str(e), file=sys.stderr)
+    cfg = _load_cfg(args)
+    if cfg is None:
         return 1
 
     if args.action == "vram":
         if not args.params:
-            print("[helix] repro vram 需要 --params（十亿参数，如 --params 7 表示 7B）", file=sys.stderr)
+            _err("repro vram 需要 --params（十亿参数，如 --params 7 表示 7B）")
             return 1
         try:
             est = repro_mod.estimate_vram(
@@ -377,7 +281,7 @@ def cmd_repro(args: argparse.Namespace) -> int:
         except ValueError as e:
             print(f"[helix] {e}", file=sys.stderr)
             return 1
-        # 指定 --profile 则只判那台，否则判 config 全部
+        # With --profile, check only that machine; otherwise check all in config
         if args.profile:
             prof = cfg.find_profile(args.profile)
             if prof is None:
@@ -403,12 +307,12 @@ def cmd_repro(args: argparse.Namespace) -> int:
         if not args.target:
             print("[helix] repro new 需要笔记路径或 arXiv id", file=sys.stderr)
             return 1
-        # 解析 title / domain / note_rel：优先当作已存在的笔记文件，否则当 arXiv id
+        # Resolve title / domain / note_rel: first treat it as an existing note file, otherwise as an arXiv id
         title = domain = note_rel = None
         p = Path(args.target)
         if p.exists() and p.suffix == ".md":
-            from .notes import _parse_frontmatter
-            fm = _parse_frontmatter(p.read_text(encoding="utf-8", errors="replace"))
+            from . import frontmatter
+            fm = frontmatter.meta(p.read_text(encoding="utf-8", errors="replace"))
             title = fm.get("title") or p.stem
             doms = fm.get("domains") or []
             domain = args.domain or (doms[0] if doms else "未分类")
@@ -417,7 +321,7 @@ def cmd_repro(args: argparse.Namespace) -> int:
             except ValueError:
                 note_rel = str(p).replace("\\", "/")
         else:
-            from .sources import arxiv
+            from .adapters import arxiv
             try:
                 paper = arxiv.get_by_id(args.target)
             except RuntimeError as e:
@@ -430,7 +334,7 @@ def cmd_repro(args: argparse.Namespace) -> int:
             domain = args.domain or "未分类"
             note_rel = f"papers/{domain}/{title}"
 
-        short = args.name or repro_mod._short_name(title)
+        short = args.name or repro_mod.short_name(title)
         try:
             ws, created = repro_mod.build_repro_workspace(
                 title, note_rel, domain, short, cfg,

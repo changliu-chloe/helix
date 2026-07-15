@@ -1,4 +1,4 @@
-"""复现规划：显存估算 + 硬件判级 + 骨架生成 + config 解析 单元测试。"""
+"""Reproduction planning: VRAM estimation + hardware grading + skeleton generation + config parsing unit tests."""
 
 import tempfile
 import unittest
@@ -10,10 +10,10 @@ from helix.config import Config, HardwareProfile, load_config
 
 class TestEstimateVram(unittest.TestCase):
     def test_7b_fp16_weights(self):
-        # 7B fp16 权重 ≈ 7e9 × 2 / 1024^3 ≈ 13.04 GB
+        # 7B fp16 weights ≈ 7e9 × 2 / 1024^3 ≈ 13.04 GB
         est = repro.estimate_vram(7, "fp16", ctx=1, batch=1)
         self.assertAlmostEqual(est.weights_gb, 7e9 * 2 / (1024 ** 3), places=2)
-        self.assertGreater(est.total_gb, est.weights_gb)  # 含 KV + 开销
+        self.assertGreater(est.total_gb, est.weights_gb)  # includes KV + overhead
 
     def test_dtype_halves(self):
         fp16 = repro.estimate_vram(7, "fp16", ctx=1)
@@ -57,10 +57,10 @@ class TestFitCheck(unittest.TestCase):
         est = repro.estimate_vram(70, "fp16", ctx=2048, batch=1)
         fit = repro.fit_check(est, self.h20)
         self.assertIn(fit.verdict, ("needs_quant", "needs_offload"))
-        self.assertTrue(fit.suggestions)  # 有降配阶梯
+        self.assertTrue(fit.suggestions)  # has a downgrade ladder
 
     def test_multi_gpu_tp(self):
-        # 70B fp16 ≈ 130GB，单卡 40G 放不下但 4×40G=160G 够 → TP
+        # 70B fp16 ≈ 130GB; won't fit on a single 40G card but 4×40G=160G is enough → TP
         est = repro.estimate_vram(70, "fp16", ctx=1, batch=1)
         fit = repro.fit_check(est, self.a100x4)
         self.assertEqual(fit.verdict, "fits_multi_tp")
@@ -75,14 +75,14 @@ class TestFitCheck(unittest.TestCase):
 
 class TestShortName(unittest.TestCase):
     def test_colon_head(self):
-        self.assertEqual(repro._short_name("Pythia: Exploiting Workflow"), "Pythia")
+        self.assertEqual(repro.short_name("Pythia: Exploiting Workflow"), "Pythia")
 
     def test_no_colon_first_words(self):
-        name = repro._short_name("Response Length Perception and Sequence Scheduling")
+        name = repro.short_name("Response Length Perception and Sequence Scheduling")
         self.assertTrue(name.startswith("Response_Length"))
 
     def test_empty(self):
-        self.assertEqual(repro._short_name(""), "untitled")
+        self.assertEqual(repro.short_name(""), "untitled")
 
 
 class TestWorkspaceSkeleton(unittest.TestCase):
@@ -110,7 +110,7 @@ class TestWorkspaceSkeleton(unittest.TestCase):
             cfg = Config(_path=Path(d) / "config.yaml")
             repro.build_repro_workspace("T", "n", "X", "t", cfg)
             _, created = repro.build_repro_workspace("T", "n", "X", "t", cfg)
-            self.assertEqual(created, [])  # 已存在，跳过
+            self.assertEqual(created, [])  # already exists, skipped
 
 
 class TestConfigHardwareProfiles(unittest.TestCase):
@@ -141,7 +141,7 @@ class TestConfigHardwareProfiles(unittest.TestCase):
             cfg_path.write_text("language: zh\n", encoding="utf-8")
             cfg = load_config(str(cfg_path))
             self.assertEqual(cfg.hardware_profiles, [])
-            self.assertEqual(cfg.repro_dir, "repro")  # 默认值
+            self.assertEqual(cfg.repro_dir, "repro")  # default value
 
 
 if __name__ == "__main__":

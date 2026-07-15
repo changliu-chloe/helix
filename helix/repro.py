@@ -1,11 +1,13 @@
-"""论文复现规划：显存估算 + 硬件判级 + 复现工作区骨架。
+"""Paper reproduction planning: VRAM estimation + hardware tiering + reproduction workspace skeleton.
 
-设计原则（与项目一致）：CLI 只做确定性计算（显存数学、判级、生成骨架），
-复现方案的深度理解与填充由外部 agent（见 skills/reproduce）完成。
+Design principle (consistent with the project): the CLI only does deterministic computation
+(VRAM math, tiering, skeleton generation); deep understanding and filling in the reproduction
+plan is done by an external agent (see skills/reproduce).
 
-方法论借鉴 ref/deepcode 的 Paper2Code：先抽取实验设置与算法细节，再产出
-分段式复现计划（文件结构 / 实现组件 / 验证方案 / 环境依赖 / 分步策略），
-但裁剪到"可执行复现方案"层，不自动生成代码。
+Methodology borrows from ref/deepcode's Paper2Code: first extract the experimental setup and
+algorithm details, then produce a segmented reproduction plan (file structure / implementation
+components / validation plan / environment dependencies / step-by-step strategy), but trimmed to
+the "executable reproduction plan" layer without auto-generating code.
 """
 
 from __future__ import annotations
@@ -15,7 +17,7 @@ from pathlib import Path
 
 from .config import Config, HardwareProfile
 
-# 每参数字节数：推理权重按精度算
+# Bytes per parameter: inference weights computed by precision
 DTYPE_BYTES = {
     "fp32": 4.0, "float32": 4.0,
     "fp16": 2.0, "float16": 2.0, "bf16": 2.0, "bfloat16": 2.0,
@@ -23,9 +25,9 @@ DTYPE_BYTES = {
     "int4": 0.5, "4bit": 0.5, "nf4": 0.5,
 }
 
-# 判级留出的安全余量：实际可用显存 = 标称 × (1 - HEADROOM)
+# Safety margin reserved for tiering: actual usable VRAM = nominal × (1 - HEADROOM)
 HEADROOM = 0.10
-# CUDA context / 框架常驻开销（GB，每卡）
+# CUDA context / framework resident overhead (GB, per GPU)
 FRAMEWORK_OVERHEAD_GB = 1.5
 
 
@@ -36,8 +38,9 @@ def _dtype_bytes(dtype: str) -> float:
     return DTYPE_BYTES[key]
 
 
-# 常见 dense transformer 的架构经验表（仅参数量已知、未给架构时用于估 KV cache）。
-# (params_b, num_layers, hidden)。取最接近者，结果标注"近似"。
+# Empirical architecture table for common dense transformers (used to estimate KV cache when only
+# param count is known and no architecture is given). (params_b, num_layers, hidden). Pick the
+# closest; results are marked "approximate".
 _ARCH_TABLE = [
     (1.0, 24, 2048),
     (3.0, 32, 2560),
@@ -50,14 +53,14 @@ _ARCH_TABLE = [
 
 
 def _infer_arch(params_b: float) -> tuple[int, int]:
-    """按参数量取最接近的经验架构 (num_layers, hidden)。"""
+    """Pick the closest empirical architecture (num_layers, hidden) by param count."""
     best = min(_ARCH_TABLE, key=lambda t: abs(t[0] - params_b))
     return best[1], best[2]
 
 
 @dataclass
 class VramEstimate:
-    """一次显存估算结果（GB）。"""
+    """Result of one VRAM estimation (GB)."""
 
     params_b: float
     dtype: str
@@ -67,7 +70,7 @@ class VramEstimate:
     kv_cache_gb: float
     overhead_gb: float
     total_gb: float
-    approximate: bool          # KV 是否用经验架构估的
+    approximate: bool          # whether KV was estimated using the empirical architecture
     num_layers: int
     hidden: int
 
@@ -97,13 +100,14 @@ def estimate_vram(
     hidden: int | None = None,
     kv_dtype: str | None = None,
 ) -> VramEstimate:
-    """估算推理显存（GB）。拆解为 权重 + KV cache + 框架开销。
+    """Estimate inference VRAM (GB). Broken down into weights + KV cache + framework overhead.
 
-    - 权重 = params_b × 1e9 × dtype_bytes
+    - weights = params_b × 1e9 × dtype_bytes
     - KV cache = 2(K/V) × num_layers × ctx × batch × hidden × kv_bytes
-      （未给架构时按经验表取最接近的 num_layers/hidden，结果标注近似）
-    - 框架开销 = 固定常驻（CUDA context 等）
-    纯推理估算，不含训练梯度/优化器态。
+      (when no architecture is given, use the closest num_layers/hidden from the empirical
+      table; the result is marked approximate)
+    - framework overhead = fixed resident (CUDA context, etc.)
+    Pure inference estimate, excluding training gradients/optimizer state.
     """
     if params_b <= 0:
         raise ValueError("params_b 必须为正（单位：十亿参数，如 7 表示 7B）")
@@ -129,20 +133,20 @@ def estimate_vram(
 
 
 # --------------------------------------------------------------------------- #
-# 硬件判级
+# Hardware tiering
 # --------------------------------------------------------------------------- #
 
 @dataclass
 class FitResult:
-    """一个显存需求对一台硬件档的判级结果。"""
+    """Tiering result of one VRAM requirement against one hardware profile."""
 
     profile: str
     verdict: str               # fits_single / fits_multi_tp / needs_quant / needs_offload / no_fit
-    summary: str               # 一句话人读结论
-    tp_gpus: int               # 需要的张量并行卡数（1=单卡）
+    summary: str               # one-line human-readable conclusion
+    tp_gpus: int               # number of tensor-parallel GPUs needed (1=single GPU)
     usable_per_gpu_gb: float
     total_usable_gb: float
-    suggestions: list[str]     # 降配阶梯
+    suggestions: list[str]     # downgrade ladder
 
     def to_dict(self) -> dict:
         return {
@@ -157,7 +161,7 @@ class FitResult:
 
 
 def _quant_ladder(est: VramEstimate, usable_total_gb: float) -> list[str]:
-    """给出比当前精度更省的量化档能否装下，作为降配建议。"""
+    """Report whether quantization tiers more economical than the current precision would fit, as downgrade suggestions."""
     order = [("int8", 1.0), ("int4", 0.5)]
     cur = _dtype_bytes(est.dtype)
     out: list[str] = []
@@ -172,19 +176,19 @@ def _quant_ladder(est: VramEstimate, usable_total_gb: float) -> list[str]:
 
 
 def fit_check(est: VramEstimate, profile: HardwareProfile) -> FitResult:
-    """判断显存需求能否落到一台硬件档上，给判级 + 降配阶梯。"""
+    """Determine whether a VRAM requirement fits on one hardware profile; give a tier + downgrade ladder."""
     usable_per = profile.vram_gb * (1 - HEADROOM)
     total_usable = usable_per * max(1, profile.num_gpus)
     need = est.total_gb
     name = profile.name
 
-    # 1) 单卡装得下
+    # 1) Fits on a single GPU
     if need <= usable_per:
         return FitResult(name, "fits_single",
                          f"单卡装得下（需 {need:.1f}GB ≤ 可用 {usable_per:.1f}GB/卡）",
                          1, usable_per, total_usable, [])
 
-    # 2) 多卡张量并行装得下（权重可切分，按总可用显存判断）
+    # 2) Fits with multi-GPU tensor parallelism (weights are splittable, judged by total usable VRAM)
     if need <= total_usable and profile.num_gpus > 1:
         import math
         tp = max(2, math.ceil(need / usable_per))
@@ -194,7 +198,7 @@ def fit_check(est: VramEstimate, profile: HardwareProfile) -> FitResult:
                          f"需 {tp} 卡张量并行 TP={tp}{inter}（需 {need:.1f}GB，单卡仅 {usable_per:.1f}GB）",
                          tp, usable_per, total_usable, [])
 
-    # 3) 量化后能装下
+    # 3) Fits after quantization
     ladder = _quant_ladder(est, total_usable)
     quant_ok = any("可装下" in s for s in ladder)
     if quant_ok:
@@ -202,7 +206,7 @@ def fit_check(est: VramEstimate, profile: HardwareProfile) -> FitResult:
                          f"全精度放不下（需 {need:.1f}GB > 可用 {total_usable:.1f}GB），需量化",
                          profile.num_gpus, usable_per, total_usable, ladder)
 
-    # 4) 都不行：offload 或换小模型
+    # 4) None work: offload or switch to a smaller model
     sug = ladder + [
         "offload 权重到 CPU/NVMe（吞吐大幅下降，仅验证正确性时可用）",
         "换更小的同族模型（如 13B→7B→3B）作缩比复现",
@@ -214,16 +218,16 @@ def fit_check(est: VramEstimate, profile: HardwareProfile) -> FitResult:
 
 
 def fit_check_all(est: VramEstimate, cfg: Config) -> list[FitResult]:
-    """对 config 里所有硬件档做判级。"""
+    """Tier against all hardware profiles in config."""
     return [fit_check(est, p) for p in cfg.hardware_profiles]
 
 
 # --------------------------------------------------------------------------- #
-# 复现工作区骨架
+# Reproduction workspace skeleton
 # --------------------------------------------------------------------------- #
 
-def _short_name(title: str) -> str:
-    """从论文标题生成简洁的工作区目录名：优先冒号前短标题，否则取前几个词。"""
+def short_name(title: str) -> str:
+    """Generate a concise workspace directory name from a paper title: prefer the short title before the colon, else take the first few words."""
     import re
 
     if not title:
@@ -235,7 +239,7 @@ def _short_name(title: str) -> str:
 
 
 def _first_profile_name(cfg: Config) -> str:
-    """复现优先用的硬件档名（config 里排最前的那台）。"""
+    """Name of the preferred hardware profile for reproduction (the first one in config)."""
     return cfg.hardware_profiles[0].name if cfg.hardware_profiles else "（未配硬件档）"
 
 
@@ -250,9 +254,9 @@ def _profile_lines(cfg: Config) -> str:
 
 
 def build_setup_skeleton(title: str, note_rel: str, cfg: Config) -> str:
-    """原文实验设置骨架（纯参考，对应 DeepCode 的 concept/algorithm analysis）。
+    """Skeleton for the paper's experimental setup (pure reference, corresponds to DeepCode's concept/algorithm analysis).
 
-    与 plan.md 分工：这里只客观记录"原文怎么做的"，不谈本机怎么跑（那是 plan.md）。
+    Division of labor with plan.md: this only objectively records "how the paper did it", not how to run it locally (that's plan.md).
     """
     return f"""# 原文实验设置：{title}
 
@@ -280,10 +284,10 @@ def build_setup_skeleton(title: str, note_rel: str, cfg: Config) -> str:
 
 
 def build_plan_skeleton(title: str, note_rel: str, cfg: Config) -> str:
-    """复现行动方案骨架。推荐方案在最前，与原文对比在最后。
+    """Skeleton for the reproduction action plan. Recommended plan first, comparison with the paper last.
 
-    与 setup.md 分工：setup.md 记录"原文怎么做的"（参考），plan.md 给"本机怎么跑"（行动）。
-    不要在这里重抄 setup.md 的原文模型/数据集清单——需要就引用 setup.md。
+    Division of labor with setup.md: setup.md records "how the paper did it" (reference), plan.md gives "how to run it locally" (action).
+    Don't re-copy setup.md's original model/dataset lists here -- reference setup.md if needed.
     """
     return f"""# 复现方案：{title}
 
@@ -355,9 +359,9 @@ def build_repro_workspace(
     title: str, note_rel: str, domain: str, short_name: str, cfg: Config,
     *, draft: bool = False, overwrite: bool = False,
 ) -> tuple[Path, list[str]]:
-    """在 repro/<方向>/<短名>/（或 draft_notes/）生成 setup.md + plan.md 骨架。
+    """Generate setup.md + plan.md skeletons under repro/<domain>/<short_name>/ (or draft_notes/).
 
-    返回 (工作区目录, 新建文件名列表)。落盘后校验非空，否则抛 OSError。
+    Returns (workspace dir, list of newly created filenames). Verifies non-empty after persisting, else raises OSError.
     """
     ws = cfg.repro_workspace_path(domain, short_name, draft=draft)
     ws.mkdir(parents=True, exist_ok=True)

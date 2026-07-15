@@ -1,7 +1,7 @@
-"""MinerU 云端解析的薄封装。
+"""Thin wrapper around MinerU cloud parsing.
 
-通过 `mineru-open-api` CLI（`MINERU_TOKEN` 传 key）把 PDF 转成 markdown + 图。
-隔离第三方接口细节，便于替换/测试。借鉴 ref/scholaraio 的调用方式。
+Converts a PDF to markdown + figures via the `mineru-open-api` CLI (passing the key through `MINERU_TOKEN`).
+Isolates third-party interface details for easy replacement/testing. Modeled on ref/scholaraio's calling approach.
 """
 
 from __future__ import annotations
@@ -13,14 +13,14 @@ import sys
 from pathlib import Path
 
 MINERU_CLI = "mineru-open-api"
-DEFAULT_TIMEOUT = 600  # 秒；云端解析 + 轮询下载
+DEFAULT_TIMEOUT = 600  # seconds; cloud parsing + polling download
 
 
 def _find_cli() -> str | None:
-    """定位 mineru-open-api CLI：优先当前解释器所在目录（同 venv/bin），再退回 PATH。
+    """Locate the mineru-open-api CLI: prefer the current interpreter's directory (same venv/bin), then fall back to PATH.
 
-    helix 常以 .venv/bin/helix 直接调用，子进程 PATH 不含 .venv/bin，
-    单靠 shutil.which 会漏掉同 venv 里的 CLI。
+    helix is often invoked directly as .venv/bin/helix, and the subprocess PATH
+    does not include .venv/bin, so relying on shutil.which alone would miss the CLI in the same venv.
     """
     sibling = Path(sys.executable).parent / MINERU_CLI
     if sibling.exists():
@@ -36,9 +36,9 @@ def parse_pdf_cloud(
     model: str = "pipeline",
     timeout: int = DEFAULT_TIMEOUT,
 ) -> tuple[str, list[Path]]:
-    """调 MinerU 云端把 PDF 转 markdown。返回 (markdown 文本, 图片路径列表)。
+    """Call MinerU cloud to convert a PDF to markdown. Returns (markdown text, list of figure paths).
 
-    失败（未装 CLI / 网络 / 非零退出）抛 RuntimeError，由上层回退。
+    On failure (CLI not installed / network / non-zero exit) raises RuntimeError, so the upper layer falls back.
     """
     cli = _find_cli()
     if cli is None:
@@ -64,29 +64,29 @@ def parse_pdf_cloud(
     if md_path is None:
         raise RuntimeError("MinerU 未产出 markdown 文件")
 
-    # 把哈希名图片按正文出现顺序重命名为 fig1/fig2…，并同步改写正文引用
+    # Rename hash-named images to fig1/fig2... in body appearance order, and rewrite the in-body references accordingly
     md_text, renamed = rename_images_sequentially(md_text, md_path.parent)
 
-    # 删除 MinerU 原始 .md（引用旧哈希名，留着会成坏链）；只保留调用方写的 fulltext.md
+    # Delete MinerU's original .md (it references the old hash names and would become a broken link); keep only the fulltext.md written by the caller
     if md_path.name != "fulltext.md":
         md_path.unlink(missing_ok=True)
 
     return md_text, renamed
 
 
-IMG_REF_RE = None  # 延迟编译，见 rename_images_sequentially
+IMG_REF_RE = None  # compiled lazily, see rename_images_sequentially
 
 
 def rename_images_sequentially(md_text: str, base_dir: Path) -> tuple[str, list[Path]]:
-    """把 md 引用的图片按出现顺序重命名为 images/figN.<ext>，改写引用。
+    """Rename images referenced by the md to images/figN.<ext> in appearance order, rewriting the references.
 
-    返回 (改写后的 md, 重命名后的图片路径列表)。base_dir 是 md 所在目录。
-    只处理指向本地相对路径的 ![](...) 引用（跳过 http/绝对路径）。
+    Returns (rewritten md, list of renamed figure paths). base_dir is the directory containing the md.
+    Only handles ![](...) references pointing to local relative paths (skips http/absolute paths).
     """
     import re
 
     ref_re = re.compile(r"!\[[^\]]*\]\(([^)]+)\)")
-    order: list[str] = []  # 按首次出现去重的原始引用路径
+    order: list[str] = []  # original reference paths, deduped by first appearance
     for m in ref_re.finditer(md_text):
         ref = m.group(1).strip()
         if ref.startswith(("http://", "https://", "/")) or ref in order:
@@ -120,7 +120,7 @@ def rename_images_sequentially(md_text: str, base_dir: Path) -> tuple[str, list[
 
     new_md = ref_re.sub(_sub, md_text)
 
-    # 清理未被正文引用的孤儿图（MinerU 常抽出装饰/子图，正文并不引用）
+    # Clean up orphan figures not referenced by the body (MinerU often extracts decorative/sub-figures the body never references)
     kept = {p.name for p in renamed}
     images_dir = base_dir / "images"
     if images_dir.is_dir():
@@ -132,7 +132,7 @@ def rename_images_sequentially(md_text: str, base_dir: Path) -> tuple[str, list[
 
 
 def _find_markdown(out_dir: Path, stem: str) -> tuple[str, Path | None]:
-    """在输出目录找 .md（优先与 PDF 同名，退化到任意 .md）。"""
+    """Find a .md in the output directory (prefer one matching the PDF name, falling back to any .md)."""
     candidates = sorted(out_dir.rglob("*.md"))
     if not candidates:
         return "", None

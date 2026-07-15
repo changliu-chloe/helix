@@ -1,4 +1,4 @@
-"""全文抓取：源码抽图 + MinerU 封装单元测试（不打真实网络）。"""
+"""Full-text fetching: source figure extraction + MinerU wrapper unit tests (no real network)."""
 
 import io
 import tarfile
@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from helix.sources import fulltext
+from helix.adapters import fulltext
 from helix.config import Config
 
 
@@ -26,7 +26,7 @@ class TestCollectFigures(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / "diagram.png").write_bytes(b"x")
-            (root / "logo.png").write_bytes(b"y")  # 应过滤
+            (root / "logo.png").write_bytes(b"y")  # should be filtered out
             found = fulltext._collect_figures(root)
             names = {p.name for p in found}
             self.assertIn("diagram.png", names)
@@ -65,35 +65,35 @@ class TestMineruGating(unittest.TestCase):
 
 class TestRenameImages(unittest.TestCase):
     def test_sequential_rename_and_rewrite(self):
-        from helix.sources import mineru_client
+        from helix.adapters import mineru_client
 
         with tempfile.TemporaryDirectory() as tmp:
             base = Path(tmp)
             imgs = base / "images"
             imgs.mkdir()
-            # 两张被引用的图 + 一张未引用的孤儿图
+            # two referenced figures + one unreferenced orphan figure
             (imgs / "aaa.jpg").write_bytes(b"x")
             (imgs / "bbb.jpg").write_bytes(b"y")
-            (imgs / "orphan.jpg").write_bytes(b"z")  # 正文不引用
+            (imgs / "orphan.jpg").write_bytes(b"z")  # not referenced in body
             md = (
                 "# T\n\n![](images/bbb.jpg)\nFigure 1\n\n"
                 "![](images/aaa.jpg)\nFigure 2\n\n![](images/bbb.jpg) again\n"
                 "![](https://x.com/z.jpg) 外链不动\n"
             )
             new_md, renamed = mineru_client.rename_images_sequentially(md, base)
-            # bbb 先出现 -> fig1；aaa -> fig2
+            # bbb appears first -> fig1; aaa -> fig2
             self.assertIn("images/fig1.jpg", new_md)
             self.assertIn("images/fig2.jpg", new_md)
             self.assertNotIn("bbb.jpg", new_md)
             self.assertNotIn("aaa.jpg", new_md)
-            self.assertIn("https://x.com/z.jpg", new_md)  # 外链保留
+            self.assertIn("https://x.com/z.jpg", new_md)  # external link preserved
             self.assertEqual({p.name for p in renamed}, {"fig1.jpg", "fig2.jpg"})
             self.assertTrue((imgs / "fig1.jpg").exists())
-            self.assertFalse((imgs / "orphan.jpg").exists())  # 孤儿图被清理
+            self.assertFalse((imgs / "orphan.jpg").exists())  # orphan figure cleaned up
             self.assertEqual({p.name for p in imgs.iterdir()}, {"fig1.jpg", "fig2.jpg"})
 
     def test_no_images_noop(self):
-        from helix.sources import mineru_client
+        from helix.adapters import mineru_client
 
         with tempfile.TemporaryDirectory() as tmp:
             md = "# T\n\n纯文字，无图\n"
@@ -104,8 +104,8 @@ class TestRenameImages(unittest.TestCase):
 
 class TestMineruCliLocate(unittest.TestCase):
     def test_prefers_sibling_of_python(self):
-        # CLI 与当前解释器同目录时应优先返回该路径（不依赖 PATH）
-        from helix.sources import mineru_client
+        # when the CLI is in the same dir as the current interpreter, prefer that path (no PATH dependency)
+        from helix.adapters import mineru_client
 
         with tempfile.TemporaryDirectory() as tmp:
             fake_bin = Path(tmp) / "bin"
@@ -116,7 +116,7 @@ class TestMineruCliLocate(unittest.TestCase):
                 self.assertEqual(mineru_client._find_cli(), str(cli))
 
     def test_falls_back_to_path(self):
-        from helix.sources import mineru_client
+        from helix.adapters import mineru_client
 
         with tempfile.TemporaryDirectory() as tmp:
             with mock.patch.object(mineru_client.sys, "executable", str(Path(tmp) / "python")), \
@@ -136,7 +136,7 @@ class TestAssetsPath(unittest.TestCase):
             self.assertEqual(cfg.mineru_key, "envkey")
         cfg2 = Config(mineru_api_key="cfgkey")
         with mock.patch.dict("os.environ", {"MINERU_API_KEY": "envkey"}):
-            self.assertEqual(cfg2.mineru_key, "cfgkey")  # config 优先
+            self.assertEqual(cfg2.mineru_key, "cfgkey")  # config takes precedence
 
 
 if __name__ == "__main__":

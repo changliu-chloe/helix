@@ -1,4 +1,4 @@
-"""读取并解析 config.yaml。"""
+"""Read and parse config.yaml."""
 
 from __future__ import annotations
 
@@ -22,14 +22,14 @@ class Domain:
 
 @dataclass
 class HardwareProfile:
-    """一台/一类可复现机器的硬件档。复现方案据此判断模型装不装得下。"""
+    """Hardware profile of one machine/class for reproduction. The repro plan uses this to judge whether a model fits."""
 
-    name: str                       # 档名，如 a100-40g / h20-96g
-    gpu_model: str = ""             # GPU 型号，如 A100-40GB / H20
-    vram_gb: float = 0.0            # 单卡显存（GB）
-    num_gpus: int = 1               # 卡数
-    interconnect: str = ""          # 互联，如 NVLink / PCIe（影响 TP 可行性）
-    notes: str = ""                 # 备注
+    name: str                       # profile name, e.g. a100-40g / h20-96g
+    gpu_model: str = ""             # GPU model, e.g. A100-40GB / H20
+    vram_gb: float = 0.0            # per-GPU VRAM (GB)
+    num_gpus: int = 1               # number of GPUs
+    interconnect: str = ""          # interconnect, e.g. NVLink / PCIe (affects TP feasibility)
+    notes: str = ""                 # notes
 
     @property
     def total_vram_gb(self) -> float:
@@ -64,11 +64,11 @@ class Config:
 
     @property
     def mineru_key(self) -> str:
-        """MinerU key：config 优先，其次环境变量 MINERU_API_KEY。"""
+        """MinerU key: config takes precedence, then the MINERU_API_KEY env var."""
         return self.mineru_api_key or os.environ.get("MINERU_API_KEY", "")
 
     def assets_path(self, domain: str, arxiv_id: str) -> Path:
-        """单篇论文的资产目录：notes/papers/<领域>/assets/<id>/。"""
+        """Asset directory for a single paper: notes/papers/<domain>/assets/<id>/."""
         import re as _re
 
         safe_domain = _re.sub(r'[ /\\:*?"<>|]+', "_", domain or "未分类").strip("_") or "未分类"
@@ -77,11 +77,11 @@ class Config:
 
     @property
     def base_dir(self) -> Path:
-        """所有相对路径的锚点 = config.yaml 所在目录（项目根）。"""
+        """Anchor for all relative paths = the directory containing config.yaml (project root)."""
         return self._path.resolve().parent if self._path else Path.cwd()
 
     def _resolve(self, p: str) -> Path:
-        """把配置里的路径解析为绝对路径：绝对路径原样，相对路径锚定 base_dir。"""
+        """Resolve a config path to absolute: absolute paths as-is, relative paths anchored to base_dir."""
         path = Path(p).expanduser()
         return path if path.is_absolute() else self.base_dir / path
 
@@ -99,11 +99,11 @@ class Config:
 
     @property
     def repro_path(self) -> Path:
-        """复现工作区根目录，与 notes_path 平级，锚定 base_dir。"""
+        """Reproduction workspace root, a sibling of notes_path, anchored to base_dir."""
         return self._resolve(self.repro_dir)
 
     def repro_workspace_path(self, domain: str, short_name: str, draft: bool = False) -> Path:
-        """单篇论文的复现工作区：repro/<方向>/<短名>/（--draft 时落 draft_notes/）。"""
+        """Reproduction workspace for a single paper: repro/<domain>/<short_name>/ (goes to draft_notes/ when --draft)."""
         import re as _re
 
         def _safe(s: str, fallback: str) -> str:
@@ -120,11 +120,11 @@ class Config:
 
     @property
     def index_path(self) -> Path:
-        """FTS5 索引位置，锚定 base_dir 下的 .helix/index.db。"""
+        """FTS5 index location, at .helix/index.db under base_dir."""
         return self.base_dir / ".helix" / "index.db"
 
     def all_categories(self) -> list[str]:
-        """所有领域的 arXiv 分类去重。"""
+        """Deduplicated arXiv categories across all domains."""
         seen: list[str] = []
         for d in self.domains:
             for c in d.arxiv_categories:
@@ -134,19 +134,19 @@ class Config:
 
 
 def find_config(explicit: str | None = None) -> Path:
-    """定位 config.yaml：显式路径 > 环境变量 HELIX_CONFIG > 从 cwd 向上逐级查找。"""
+    """Locate config.yaml: explicit path > HELIX_CONFIG env var > search upward from cwd."""
     if explicit:
         return Path(explicit)
     env = os.environ.get("HELIX_CONFIG")
     if env:
         return Path(env)
-    # 从当前目录向上找 config.yaml（像 git 找 .git），支持在子目录运行
+    # Search upward from cwd for config.yaml (like git finding .git), so it works from subdirs
     cur = Path.cwd()
     for d in [cur, *cur.parents]:
         candidate = d / DEFAULT_CONFIG_NAME
         if candidate.exists():
             return candidate
-    return cur / DEFAULT_CONFIG_NAME  # 都没找到，回退当前目录（后续报错友好提示）
+    return cur / DEFAULT_CONFIG_NAME  # not found anywhere; fall back to cwd (a friendly error follows)
 
 
 def load_config(path: str | None = None) -> Config:

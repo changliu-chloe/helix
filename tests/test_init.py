@@ -1,4 +1,4 @@
-"""helix init 软链单元测试。"""
+"""helix init symlink unit tests."""
 
 import tempfile
 import unittest
@@ -12,7 +12,7 @@ class TestLinkSkills(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name)
-        # 造 skills 源目录：两个合法 skill + 一个无 SKILL.md 的目录（应被忽略）
+        # build the skills source dir: two valid skills + one dir without SKILL.md (should be ignored)
         for name in ("search", "daily"):
             d = self.root / "skills" / name
             d.mkdir(parents=True)
@@ -34,7 +34,7 @@ class TestLinkSkills(unittest.TestCase):
         dest = self.root / ".claude" / "skills"
         self.assertTrue((dest / "search").is_symlink())
         self.assertTrue((dest / "daily").is_symlink())
-        self.assertFalse((dest / "notaskill").exists())  # 无 SKILL.md 被忽略
+        self.assertFalse((dest / "notaskill").exists())  # no SKILL.md, ignored
         self.assertEqual(sum(1 for x in logs if x.startswith("已链接")), 2)
 
     def test_idempotent(self):
@@ -46,9 +46,9 @@ class TestLinkSkills(unittest.TestCase):
     def test_does_not_overwrite_real_dir(self):
         dest = self.root / ".claude" / "skills"
         dest.mkdir(parents=True)
-        (dest / "search").mkdir()  # 真实目录占位
+        (dest / "search").mkdir()  # real directory placeholder
         logs = init.link_skills(scope="project")
-        self.assertFalse((dest / "search").is_symlink())  # 未被覆盖
+        self.assertFalse((dest / "search").is_symlink())  # not overwritten
         self.assertTrue(any("非软链" in x for x in logs))
 
 

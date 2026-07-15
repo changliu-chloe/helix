@@ -1,7 +1,8 @@
-"""Markdown 笔记：生成骨架、扫描建关键词索引、wikilink 自动链接。
+"""Markdown notes: generate skeletons, scan to build a keyword index, auto wikilink.
 
-整合自 ref/evil-read-arxiv 的 generate_note / scan_existing_notes / link_keywords。
-设计原则：CLI 只生成骨架和管理 wikilink 关系，深读正文由外部 agent 填充。
+Consolidated from ref/evil-read-arxiv's generate_note / scan_existing_notes / link_keywords.
+Design principle: the CLI only generates skeletons and manages wikilink relations; the
+deep-reading body is filled in by an external agent.
 """
 
 from __future__ import annotations
@@ -11,10 +12,11 @@ from pathlib import Path
 
 import yaml
 
+from . import frontmatter
 from .config import Config
 from .models import Paper
 
-# 通用词：自动提词与链接时排除（区分度低）
+# Common words: excluded during keyword extraction and linking (low distinctiveness)
 COMMON_WORDS = {
     "and", "the", "for", "of", "in", "on", "at", "by", "with", "from",
     "to", "as", "or", "but", "not", "a", "an", "is", "are", "was", "were",
@@ -30,24 +32,24 @@ COMMON_WORDS = {
 
 
 # --------------------------------------------------------------------------- #
-# 文件名 / 路径
+# Filename / path
 # --------------------------------------------------------------------------- #
 
 def title_to_filename(title: str) -> str:
-    """论文标题转安全文件名（不含扩展名）。"""
+    """Convert a paper title to a safe filename (without extension)."""
     name = re.sub(r'[ /\\:*?"<>|]+', "_", title).strip("_")
     return name or "untitled"
 
 
 def note_path_for(paper: Paper, cfg: Config) -> Path:
-    """按领域分目录返回单篇笔记路径：papers/<领域>/<标题>.md。"""
+    """Return a single note path split by domain: papers/<domain>/<title>.md."""
     domain = paper.matched_domains[0] if paper.matched_domains else "未分类"
     domain_dir = re.sub(r'[ /\\:*?"<>|]+', "_", domain).strip("_") or "未分类"
     return cfg.papers_path / domain_dir / f"{title_to_filename(paper.title)}.md"
 
 
 # --------------------------------------------------------------------------- #
-# 笔记骨架生成
+# Note skeleton generation
 # --------------------------------------------------------------------------- #
 
 def _frontmatter(paper: Paper) -> str:
@@ -68,7 +70,7 @@ def _frontmatter(paper: Paper) -> str:
 
 
 def build_note_skeleton(paper: Paper, lang: str = "zh") -> str:
-    """生成单篇深读笔记骨架。正文小节留空，供 agent 填写。"""
+    """Generate a single deep-reading note skeleton. Body sections are left empty for the agent to fill in."""
     fm = _frontmatter(paper)
     authors = ", ".join(paper.authors) if paper.authors else "--"
     links = f"[arXiv]({paper.url}) | [PDF]({paper.pdf_url})"
@@ -146,9 +148,9 @@ def build_note_skeleton(paper: Paper, lang: str = "zh") -> str:
 
 
 def write_note(paper: Paper, cfg: Config, overwrite: bool = False) -> tuple[Path, bool]:
-    """写入单篇笔记骨架。返回 (路径, 是否新建)。已存在且未 overwrite 则跳过。
+    """Write a single note skeleton. Returns (path, whether newly created). Skips if it exists and overwrite is False.
 
-    写入后校验文件确实落盘且非空，否则抛 OSError——杜绝"报告成功却没写入"。
+    After writing, verify the file was actually persisted and is non-empty, else raise OSError -- avoids "reporting success without writing".
     """
     path = note_path_for(paper, cfg)
     if path.exists() and not overwrite:
@@ -156,40 +158,30 @@ def write_note(paper: Paper, cfg: Config, overwrite: bool = False) -> tuple[Path
     path.parent.mkdir(parents=True, exist_ok=True)
     content = build_note_skeleton(paper, cfg.language)
     path.write_text(content, encoding="utf-8")
-    # 落盘校验：文件必须存在且大小与写入内容一致
+    # Persistence check: the file must exist and its size be consistent with what was written
     if not path.exists() or path.stat().st_size == 0:
         raise OSError(f"笔记写入失败，文件未落盘：{path}")
     return path, True
 
 
 # --------------------------------------------------------------------------- #
-# 扫描建索引
+# Scan to build index
 # --------------------------------------------------------------------------- #
 
-def _parse_frontmatter(content: str) -> dict:
-    m = re.match(r"^---\s*\n(.*?)^---\s*\n", content, re.MULTILINE | re.DOTALL)
-    if not m:
-        return {}
-    try:
-        return yaml.safe_load(m.group(1)) or {}
-    except yaml.YAMLError:
-        return {}
-
-
 def extract_title_keywords(title: str) -> list[str]:
-    """从标题提取可作为 wikilink 锚点的关键词（缩写、专有名词、连字符术语）。"""
+    """Extract keywords from a title usable as wikilink anchors (acronyms, proper nouns, hyphenated terms)."""
     if not title:
         return []
     keywords: list[str] = []
-    # 开头大写缩写：BLIP: ...
+    # Leading uppercase acronym: BLIP: ...
     m = re.match(r"^([A-Z]{2,})(?:\s*:|\s+)", title)
     if m:
         keywords.append(m.group(1))
-    # 冒号前短标题
+    # Short title before the colon
     parts = title.split(":")
     if len(parts) >= 2 and 3 <= len(parts[0].strip()) <= 20:
         keywords.append(parts[0].strip())
-    # 连字符技术术语：Vision-Language
+    # Hyphenated technical terms: Vision-Language
     for term in re.findall(r"\b[A-Z][a-z]*(?:-[A-Z][a-z]*)+\b", title):
         t = term.strip()
         if 3 <= len(t) <= 20 and t.lower() not in COMMON_WORDS:
@@ -198,18 +190,18 @@ def extract_title_keywords(title: str) -> list[str]:
 
 
 def iter_note_files(papers_dir: Path):
-    """遍历真正的笔记 .md，跳过 assets/ 下的附属文件（fulltext.md 等）。"""
+    """Iterate over real note .md files, skipping ancillary files under assets/ (fulltext.md, etc.)."""
     if not papers_dir.exists():
         return
     for md in papers_dir.rglob("*.md"):
         rel = md.relative_to(papers_dir)
-        if "assets" in rel.parts:  # papers/<方向>/assets/<id>/*.md 是附属，非笔记
+        if "assets" in rel.parts:  # papers/<domain>/assets/<id>/*.md are ancillary, not notes
             continue
         yield md
 
 
 def scan_notes(cfg: Config) -> dict:
-    """扫描 papers 目录，返回 {notes:[...], keyword_to_notes:{kw:[path]}}。"""
+    """Scan the papers directory, returning {notes:[...], keyword_to_notes:{kw:[path]}}."""
     papers_dir = cfg.papers_path
     notes: list[dict] = []
     keyword_sets: dict[str, set[str]] = {}
@@ -227,7 +219,7 @@ def scan_notes(cfg: Config) -> dict:
             content = md.read_text(encoding="utf-8", errors="replace")
         except OSError:
             continue
-        fm = _parse_frontmatter(content)
+        fm = frontmatter.meta(content)
         rel = str(md.relative_to(cfg.notes_path)).replace("\\", "/")
         title = fm.get("title") or md.stem
         title_kws = extract_title_keywords(title)
@@ -240,13 +232,13 @@ def scan_notes(cfg: Config) -> dict:
 
 
 # --------------------------------------------------------------------------- #
-# wikilink 自动链接
+# wikilink auto-linking
 # --------------------------------------------------------------------------- #
 
 def _split_protected_lines(content: str) -> list[tuple[str, bool]]:
-    """把内容按行拆分，标记哪些行应跳过（frontmatter/代码块/标题/图片/已有链接行）。
+    """Split content into lines, marking which should be skipped (frontmatter/code block/heading/image/existing-link lines).
 
-    返回 [(line, skip)]。行内代码在可处理行内单独保护。
+    Returns [(line, skip)]. Inline code is protected separately within processable lines.
     """
     out: list[tuple[str, bool]] = []
     in_code = False
@@ -276,12 +268,12 @@ def _split_protected_lines(content: str) -> list[tuple[str, bool]]:
 
 
 def _wikilink_spans(text: str) -> list[tuple[int, int]]:
-    """返回文本中所有 [[...]] 的 (start, end) 区间。"""
+    """Return the (start, end) spans of all [[...]] in the text."""
     return [(m.start(), m.end()) for m in re.finditer(r"\[\[.*?\]\]", text)]
 
 
 def link_keywords_in_text(text: str, keyword_index: dict[str, list[str]]) -> str:
-    """在单行文本中把关键词替换为 [[path|原文]]。跳过多论文共享词和已在 wikilink 内的匹配。"""
+    """Replace keywords in a single line of text with [[path|original]]. Skip words shared across multiple papers and matches already inside a wikilink."""
     candidates = {
         kw: paths
         for kw, paths in keyword_index.items()
@@ -289,7 +281,7 @@ def link_keywords_in_text(text: str, keyword_index: dict[str, list[str]]) -> str
     }
     result = text
     matched: set[str] = set()
-    # 长关键词优先，避免子串误匹配
+    # Longer keywords first, to avoid substring mismatches
     for kw in sorted(candidates, key=len, reverse=True):
         if kw in matched:
             continue
@@ -298,19 +290,19 @@ def link_keywords_in_text(text: str, keyword_index: dict[str, list[str]]) -> str
         if not hits:
             continue
         path = candidates[kw][0]
-        # 预计算当前已有的 wikilink 区间；反向替换保证低位偏移不失效
+        # Precompute existing wikilink spans; replacing in reverse keeps lower offsets valid
         spans = _wikilink_spans(result)
         for m in reversed(hits):
             start, end = m.span()
             if any(s <= start and end <= e for s, e in spans):
-                continue  # 落在已有 wikilink 内
+                continue  # falls inside an existing wikilink
             result = result[:start] + f"[[{path}|{m.group(0)}]]" + result[end:]
         matched.add(kw)
     return result
 
 
 def link_file(path: Path, keyword_index: dict[str, list[str]]) -> int:
-    """对文件正文做 wikilink 链接，原地写回。返回新增链接数。"""
+    """Apply wikilink linking to a file's body, writing back in place. Returns the number of links added."""
     content = path.read_text(encoding="utf-8")
     before = len(re.findall(r"\[\[.*?\]\]", content))
     out_lines = []
@@ -318,7 +310,7 @@ def link_file(path: Path, keyword_index: dict[str, list[str]]) -> int:
         if skip:
             out_lines.append(line)
             continue
-        # 保护行内代码
+        # Protect inline code
         codes: list[str] = []
         def stash(m):
             codes.append(m.group(0))

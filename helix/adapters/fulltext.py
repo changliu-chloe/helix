@@ -1,11 +1,11 @@
-"""全文抓取：PDF 下载、arXiv 源码包高清图提取、MinerU 云端解析。
+"""Full-text fetching: PDF download, high-res figure extraction from arXiv source bundles, MinerU cloud parsing.
 
-- download_pdf：从 arxiv.org/pdf 下 PDF
-- download_source_figures：下 arxiv.org/e-print 源码 tar.gz，取原始高清图（最清晰）
-- mineru_parse：调 MinerU 云端 API 把 PDF 转 markdown（需 api_key）
+- download_pdf: download the PDF from arxiv.org/pdf
+- download_source_figures: download the arxiv.org/e-print source tar.gz and take the original high-res figures (clearest)
+- mineru_parse: call the MinerU cloud API to convert a PDF to markdown (requires api_key)
 
-移植自 ref/evil-read-arxiv/extract-paper-images（源码抽图）与
-ref/scholaraio/.../providers/mineru.py（云端解析）。
+Ported from ref/evil-read-arxiv/extract-paper-images (source figure extraction) and
+ref/scholaraio/.../providers/mineru.py (cloud parsing).
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ import tempfile
 import urllib.request
 from pathlib import Path
 
-# 源码包里常见的图片目录名（小写匹配，含单复数）
+# Common image directory names in source bundles (lowercase match, singular and plural)
 FIGURE_DIR_NAMES = {"pics", "pic", "figures", "figure", "fig", "figs", "images", "image", "img", "imgs", "plots", "graphics"}
 IMG_EXTS = {".png", ".jpg", ".jpeg", ".pdf", ".eps", ".svg"}
 
@@ -28,7 +28,7 @@ def _download(url: str, timeout: int = 60) -> bytes:
 
 
 def download_pdf(arxiv_id: str, out_dir: Path) -> Path:
-    """下载 PDF 到 out_dir/<id>.pdf。"""
+    """Download the PDF to out_dir/<id>.pdf."""
     out_dir.mkdir(parents=True, exist_ok=True)
     url = f"https://arxiv.org/pdf/{arxiv_id}"
     data = _download(url)
@@ -38,7 +38,7 @@ def download_pdf(arxiv_id: str, out_dir: Path) -> Path:
 
 
 def _safe_extract(tar: tarfile.TarFile, dest: Path) -> None:
-    """安全解包：跳过绝对路径、.. 穿越、符号链接。"""
+    """Safe extraction: skip absolute paths, .. traversal, and symlinks."""
     safe = []
     for m in tar.getmembers():
         if m.name.startswith("/") or ".." in Path(m.name).parts:
@@ -50,7 +50,7 @@ def _safe_extract(tar: tarfile.TarFile, dest: Path) -> None:
 
 
 def download_source_figures(arxiv_id: str, out_dir: Path) -> list[Path]:
-    """下 arXiv 源码包，提取原始高清图到 out_dir。返回图片路径列表（已按名排序）。"""
+    """Download the arXiv source bundle and extract original high-res figures to out_dir. Returns a list of figure paths (sorted by name)."""
     out_dir.mkdir(parents=True, exist_ok=True)
     url = f"https://arxiv.org/e-print/{arxiv_id}"
     data = _download(url)
@@ -64,12 +64,12 @@ def download_source_figures(arxiv_id: str, out_dir: Path) -> list[Path]:
             with tarfile.open(tar_path, "r:gz") as tar:
                 _safe_extract(tar, tmp_path)
         except (tarfile.TarError, OSError):
-            return []  # 不是 tar.gz（可能是单文件），交给调用方回退
+            return []  # not a tar.gz (possibly a single file); let the caller fall back
 
         found = _collect_figures(tmp_path)
         used: set[str] = set()
         for src in found:
-            # 保留原始文件名（method/teaser 比 fig1 更有意义），冲突时加序号
+            # Keep the original filename (method/teaser is more meaningful than fig1); add a suffix on conflict
             name = src.name
             if name in used:
                 name = f"{src.stem}_{len(used)}{src.suffix.lower()}"
@@ -84,10 +84,10 @@ def download_source_figures(arxiv_id: str, out_dir: Path) -> list[Path]:
 
 
 def _collect_figures(root: Path) -> list[Path]:
-    """在解包目录里找图片：递归匹配常见图目录（大小写不敏感），退化到根目录。过滤 logo/icon。"""
+    """Find figures in the extracted directory: recursively match common figure dirs (case-insensitive), falling back to the root. Filter out logo/icon."""
     found: list[Path] = []
     seen: set[str] = set()
-    # 递归找名字匹配的图目录（如 figure/ figures/ pics/，任意深度）
+    # Recursively find figure dirs matching by name (e.g. figure/ figures/ pics/, at any depth)
     for d in sorted(p for p in root.rglob("*") if p.is_dir()):
         if d.name.lower() in FIGURE_DIR_NAMES:
             for f in sorted(d.iterdir()):
@@ -95,7 +95,7 @@ def _collect_figures(root: Path) -> list[Path]:
                     seen.add(f.name)
                     found.append(f)
     if not found:
-        # 根目录直接扫图（含位图，过滤 logo/icon）
+        # Scan figures directly in the root (including bitmaps, filtering logo/icon)
         for f in sorted(root.rglob("*")):
             if f.is_file() and f.suffix.lower() in {".png", ".jpg", ".jpeg"}:
                 low = f.name.lower()
@@ -106,10 +106,10 @@ def _collect_figures(root: Path) -> list[Path]:
 
 
 def mineru_parse(pdf_path: Path, api_key: str, out_dir: Path) -> tuple[str, list[Path]]:
-    """调 MinerU 云端把 PDF 转 markdown。返回 (markdown 文本, 图片路径列表)。
+    """Call MinerU cloud to convert a PDF to markdown. Returns (markdown text, list of figure paths).
 
-    需要 mineru-open-api（可选依赖）。未安装或无 key 时抛 RuntimeError，
-    由调用方回退到源码图 + 摘要。
+    Requires mineru-open-api (optional dependency). Raises RuntimeError when not
+    installed or no key is present, so the caller falls back to source figures + abstract.
     """
     if not api_key:
         raise RuntimeError("未配置 MinerU api_key（config.yaml: mineru_api_key 或环境变量 MINERU_API_KEY）")
@@ -120,7 +120,7 @@ def mineru_parse(pdf_path: Path, api_key: str, out_dir: Path) -> tuple[str, list
             "未安装 mineru-open-api，无法用 MinerU 云端解析。安装：uv pip install 'helix[fulltext]'"
         ) from e
 
-    # 具体调用交由 mineru-open-api 完成：上传 PDF → 轮询 → 下载 zip（含 md + images）
-    from .mineru_client import parse_pdf_cloud  # 薄封装，隔离第三方接口细节
+    # The actual call is delegated to mineru-open-api: upload PDF -> poll -> download zip (contains md + images)
+    from .mineru_client import parse_pdf_cloud  # thin wrapper, isolates third-party interface details
 
     return parse_pdf_cloud(pdf_path, api_key=api_key, out_dir=out_dir)

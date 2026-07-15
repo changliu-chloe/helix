@@ -1,7 +1,8 @@
-"""DBLP 来源适配器（会议/期刊论文）。
+"""DBLP source adapter (conference/journal papers).
 
-用 DBLP 公开的 publ search API（JSON）。DBLP 不提供摘要和引用数，
-主要贡献是权威的会议/期刊 venue 信息，venue 存入 categories 便于打分/展示。
+Uses DBLP's public publ search API (JSON). DBLP provides no abstracts or
+citation counts; its main value is authoritative conference/journal venue
+info. The venue is stored in categories for scoring/display.
 """
 
 from __future__ import annotations
@@ -61,9 +62,9 @@ def _to_paper(hit: dict) -> Paper | None:
         paper_id=info.get("key", "") or hit.get("@id", ""),
         title=html.unescape(title.strip().rstrip(".")),
         authors=[html.unescape(a) for a in _authors(info)],
-        abstract="",  # DBLP 不提供摘要
+        abstract="",  # DBLP provides no abstract
         published=year,
-        categories=venues,  # venue 放进 categories
+        categories=venues,  # put venue into categories
         source="dblp",
         url=info.get("ee", "") or info.get("url", ""),
         pdf_url="",
@@ -72,7 +73,7 @@ def _to_paper(hit: dict) -> Paper | None:
 
 
 def search(query: str, limit: int = 50) -> list[Paper]:
-    """按查询词检索 DBLP，返回会议/期刊论文 Paper 列表。"""
+    """Search DBLP by query, returning a list of conference/journal Paper."""
     params = {"q": query, "format": "json", "h": str(min(limit, 100))}
     url = f"{DBLP_SEARCH_API}?{urllib.parse.urlencode(params)}"
     data = _request(url)

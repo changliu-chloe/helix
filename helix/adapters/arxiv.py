@@ -1,7 +1,7 @@
-"""arXiv 来源适配器。
+"""arXiv source adapter.
 
-调用 arXiv Atom API，解析 XML，返回统一的 Paper 列表。
-移植自 ref/evil-read-arxiv/start-my-day/scripts/search_arxiv.py。
+Calls the arXiv Atom API, parses the XML, and returns a unified list of Paper.
+Ported from ref/evil-read-arxiv/start-my-day/scripts/search_arxiv.py.
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ def _build_url(search_query: str, max_results: int, sort_by: str) -> str:
         "sortBy": sort_by,
         "sortOrder": "descending",
     }
-    # arXiv 的 search_query 里 +OR+ / : 有语义，用 safe 保留
+    # In arXiv's search_query, +OR+ and : are semantic; preserve them via safe
     return f"{ARXIV_API}?{urllib.parse.urlencode(params, safe='+:')}"
 
 
@@ -40,7 +40,7 @@ def _fetch(url: str, max_retries: int = 3, timeout: int = 60) -> str:
             req = urllib.request.Request(url, headers={"User-Agent": "helix/0.1"})
             with urllib.request.urlopen(req, timeout=timeout) as resp:
                 return resp.read().decode("utf-8")
-        except Exception as e:  # noqa: BLE001 — 网络异常统一重试
+        except Exception as e:  # noqa: BLE001 — retry uniformly on network errors
             last_err = e
             if attempt < max_retries - 1:
                 time.sleep((2 ** attempt) * 2)
@@ -48,7 +48,7 @@ def _fetch(url: str, max_retries: int = 3, timeout: int = 60) -> str:
 
 
 def parse_xml(xml_content: str) -> list[Paper]:
-    """解析 arXiv Atom XML 为 Paper 列表。"""
+    """Parse arXiv Atom XML into a list of Paper."""
     papers: list[Paper] = []
     root = ET.fromstring(xml_content)
     for entry in root.findall("atom:entry", NS):
@@ -110,7 +110,7 @@ def search_by_categories(
     days: int = 30,
     max_results: int = 200,
 ) -> list[Paper]:
-    """按分类 + 最近 N 天日期窗口检索。"""
+    """Search by category plus a recent N-day date window."""
     cat_q = "+OR+".join(f"cat:{c}" for c in categories)
     end = datetime.now()
     start = end - timedelta(days=days)
@@ -121,7 +121,7 @@ def search_by_categories(
 
 
 def get_by_id(arxiv_id: str) -> Paper | None:
-    """按 arXiv id 取单篇元数据。"""
+    """Fetch metadata for a single paper by arXiv id."""
     arxiv_id = arxiv_id.strip()
     url = f"{ARXIV_API}?{urllib.parse.urlencode({'id_list': arxiv_id, 'max_results': '1'})}"
     papers = parse_xml(_fetch(url))
@@ -133,7 +133,7 @@ def search_by_keywords(
     days: int | None = None,
     max_results: int = 100,
 ) -> list[Paper]:
-    """按关键词检索标题/摘要，可选日期窗口。"""
+    """Search title/abstract by keywords, with an optional date window."""
     parts = []
     for kw in keywords:
         kw = kw.strip()

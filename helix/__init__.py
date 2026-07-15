@@ -1,3 +1,3 @@
-"""helix —— 论文检索追踪 + 深读理解 CLI。"""
+"""helix -- paper search/tracking + deep-reading CLI."""
 
 __version__ = "0.1.0"
