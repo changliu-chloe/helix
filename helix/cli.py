@@ -273,6 +273,54 @@ def cmd_note(args: argparse.Namespace) -> int:
         print(f"[helix] {target}: 新增 {added} 个 wikilink", file=sys.stderr)
         return 0
 
+    if args.action == "score":
+        if not args.target:
+            _err("note score 需要笔记路径，例如：helix note score notes/papers/VLA/xxx.md --relevance 8 --novelty 7 --reliability 6")
+            return 1
+        if args.relevance is None and args.novelty is None and args.reliability is None:
+            _err("note score 至少要给一个维度：--relevance / --novelty / --reliability（0-10）")
+            return 1
+        target = Path(args.target)
+        try:
+            scores = notes_mod.set_review_scores(
+                target,
+                relevance=args.relevance, novelty=args.novelty, reliability=args.reliability,
+                reviewer_model=args.reviewer_model or cfg.reviewer_model,
+                note=args.note,
+            )
+        except OSError as e:
+            print(f"[helix] {e}", file=sys.stderr)
+            return 1
+        print(json.dumps(scores, ensure_ascii=False, indent=2))
+        print(f"[helix] 已写入打分：{target} → {scores}", file=sys.stderr)
+        return 0
+
+    return 2
+
+
+def cmd_review(args: argparse.Namespace) -> int:
+    from . import review as review_mod
+
+    cfg = _load_cfg(args)
+    if cfg is None:
+        return 1
+
+    if args.action == "new":
+        if not args.topic:
+            _err('review new 需要综述主题，例如：helix review new "视觉语言动作模型综述"')
+            return 1
+        try:
+            path, created = review_mod.write_review(
+                args.topic, cfg, overwrite=args.overwrite, name=args.name,
+            )
+        except OSError as e:
+            print(f"[helix] {e}", file=sys.stderr)
+            return 1
+        action = "已创建" if created else "已存在（跳过，可加 --overwrite）"
+        print(f"[helix] {action}：{path}", file=sys.stderr)
+        print(str(path))
+        return 0
+
     return 2
 
 
@@ -438,13 +486,25 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--domain", help="指定研究方向（assets 归档目录），与 note new --domain 保持一致")
     sp.set_defaults(func=cmd_fetch)
 
-    sp = sub.add_parser("note", help="笔记：new <id> / scan / link <file> / rename <file>")
-    sp.add_argument("action", choices=["new", "scan", "link", "rename"])
-    sp.add_argument("target", nargs="?", help="new: arXiv id；link/rename: 笔记文件路径")
+    sp = sub.add_parser("note", help="笔记：new <id> / scan / link <file> / rename <file> / score <file>")
+    sp.add_argument("action", choices=["new", "scan", "link", "rename", "score"])
+    sp.add_argument("target", nargs="?", help="new: arXiv id；link/rename/score: 笔记文件路径")
     sp.add_argument("--overwrite", action="store_true", help="new: 覆盖已存在的笔记；rename: 允许覆盖同名目标")
     sp.add_argument("--domain", help="new: 指定研究方向（归档目录），可用 config 里没有的新方向；留空则自动判定")
     sp.add_argument("--name", help="new: 指定笔记短名（省略从标题自动生成短名）；rename: 新短名")
+    sp.add_argument("--relevance", type=float, help="score: 相关性打分 0-10（独立评审给，见 skills/deep-read）")
+    sp.add_argument("--novelty", type=float, help="score: 创新性打分 0-10")
+    sp.add_argument("--reliability", type=float, help="score: 可靠性打分 0-10")
+    sp.add_argument("--reviewer-model", help="score: 评审模型名（省略取 config reviewer_model）")
+    sp.add_argument("--note", help="score: 打分理由一句话（写进 frontmatter）")
     sp.set_defaults(func=cmd_note)
+
+    sp = sub.add_parser("review", help="文献综述：new <topic> 生成综述骨架")
+    sp.add_argument("action", choices=["new"])
+    sp.add_argument("topic", nargs="?", help="new: 综述主题，如 “视觉语言动作模型综述”")
+    sp.add_argument("--name", help="new: 指定综述短名（省略从主题自动生成）")
+    sp.add_argument("--overwrite", action="store_true", help="new: 覆盖已存在的综述骨架")
+    sp.set_defaults(func=cmd_review)
 
     sp = sub.add_parser("repro", help="论文复现：vram 显存判级 / new 建复现工作区")
     sp.add_argument("action", choices=["vram", "new"])

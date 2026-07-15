@@ -1,6 +1,7 @@
 ---
 name: deep-read
 description: 当用户想深读、精读、总结、分析某一篇具体论文（给了 arXiv id 或标题），并把理解沉淀成结构化笔记时使用。
+allowed-tools: Bash(*), Read, Grep, Glob, Write, Edit, mcp__codex__codex, mcp__codex__codex-reply
 ---
 
 # 单篇论文深读
@@ -78,7 +79,41 @@ uv run helix note rename <当前笔记路径> --name <新短名>
 - rename 会**原地改名 + 自动同步全库指向它的 `[[wikilink]]`**，不丢引用；assets（按 arxiv id 存）不受影响。
 - 目标名已存在会报错（不覆盖），换个名或确认后加 `--overwrite`。
 
-### 6. 自动链接 + 建索引
+### 6. 独立评审打分（三维，无论是否做综述都打）
+精读完成后，请一个**独立评审模型**（经 Codex MCP）给论文打三维分（0-10）。为什么要独立评审：
+你刚做完深读、写了总结，若让自己再打分会系统性虚高（自评偏差）；换全新、零先验上下文的模型，
+才能拿到诚实的判断——这正是打分「更可靠」的关键。
+
+- REVIEWER_MODEL = config 的 `reviewer_model`（默认 `gpt-5.6-sol`，须为 OpenAI 模型）。
+- **铁律**：每次打分都用**全新 `mcp__codex__codex` 线程**，不复用 `codex-reply` 累积上下文。
+
+**前置探测**：本步依赖 Codex MCP。若工具列表里没有 `mcp__codex__codex`（没注册），**不要硬报错**——
+告诉用户「三维打分需先注册 Codex MCP（见 README 搭环境第 4 步：`claude mcp add codex -s user -- codex mcp-server`，
+重启后生效）」，然后**跳过打分、照常完成笔记的其余部分**（第 7 步继续）。打分是增量，缺它不该挡住深读。
+
+做法（dossier 模式，照 novelty-check）：
+1. 写 dossier 文件（如 `.helix/score_dossier_<短名>.md`），含：论文标题/方向、全文路径
+   `notes/papers/<方向>/assets/<id>/fulltext.md`（无全文则用摘要），以及三个评分问题：
+   - **相关性(relevance)**：与该研究方向的贴合度
+   - **创新性(novelty)**：相对已有工作的增量，最近似前作 + delta
+   - **可靠性(reliability)**：实验充分度、baseline 强度、结论是否被证据支撑、明显缺陷
+   要求每维 0-10 + 一句话理由，末尾一句总评。
+2. 调用（fresh 线程）：
+   ```
+   mcp__codex__codex:
+     model: <REVIEWER_MODEL>
+     config: {"model_reasoning_effort": "xhigh"}
+     sandbox: read-only
+     prompt: |
+       Read the score dossier at <dossier 绝对路径> and follow all instructions in it.
+   ```
+3. 写回笔记 frontmatter：
+   ```bash
+   uv run helix note score <笔记路径> --relevance <N> --novelty <N> --reliability <N> --note "<一句话总评>"
+   ```
+   评分理由补进「批判性分析」小节。做综述时（skills/review）会直接读这份 `review_scores`，不重复打分。
+
+### 7. 自动链接 + 建索引
 ```bash
 uv run helix note link <笔记路径>    # 把正文里出现的其他论文名自动变成 wikilink
 uv run helix index build             # 重建 FTS 索引，让这篇能被本地检索到
