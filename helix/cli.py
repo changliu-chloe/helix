@@ -195,13 +195,27 @@ def cmd_note(args: argparse.Namespace) -> int:
         paper.matched_domains = [domain] if domain else []
         paper.matched_keywords = matched
         try:
-            path, created = notes_mod.write_note(paper, cfg, overwrite=args.overwrite)
+            path, created = notes_mod.write_note(paper, cfg, overwrite=args.overwrite, name=args.name)
         except OSError as e:
             print(f"[helix] {e}", file=sys.stderr)
             return 1
         action = "已创建" if created else "已存在（跳过，可加 --overwrite）"
         print(f"[helix] {action}：{path}", file=sys.stderr)
         print(str(path))
+        return 0
+
+    if args.action == "rename":
+        if not args.target or not args.name:
+            _err("note rename 需要笔记路径和 --name，例如：helix note rename notes/papers/VLA/xxx.md --name CoT-VLA")
+            return 1
+        target = Path(args.target)
+        try:
+            new_path, updated = notes_mod.rename_note(target, args.name, cfg, overwrite=args.overwrite)
+        except OSError as e:
+            print(f"[helix] {e}", file=sys.stderr)
+            return 1
+        print(f"[helix] 已改名：{target.name} → {new_path.name}（同步更新 {updated} 篇笔记的 wikilink）", file=sys.stderr)
+        print(str(new_path))
         return 0
 
     if args.action == "scan":
@@ -383,11 +397,12 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--domain", help="指定研究方向（assets 归档目录），与 note new --domain 保持一致")
     sp.set_defaults(func=cmd_fetch)
 
-    sp = sub.add_parser("note", help="笔记：new <id> / scan / link <file>")
-    sp.add_argument("action", choices=["new", "scan", "link"])
-    sp.add_argument("target", nargs="?", help="new: arXiv id；link: 笔记文件路径")
-    sp.add_argument("--overwrite", action="store_true", help="new: 覆盖已存在的笔记")
+    sp = sub.add_parser("note", help="笔记：new <id> / scan / link <file> / rename <file>")
+    sp.add_argument("action", choices=["new", "scan", "link", "rename"])
+    sp.add_argument("target", nargs="?", help="new: arXiv id；link/rename: 笔记文件路径")
+    sp.add_argument("--overwrite", action="store_true", help="new: 覆盖已存在的笔记；rename: 允许覆盖同名目标")
     sp.add_argument("--domain", help="new: 指定研究方向（归档目录），可用 config 里没有的新方向；留空则自动判定")
+    sp.add_argument("--name", help="new: 指定笔记短名（省略从标题自动生成短名）；rename: 新短名")
     sp.set_defaults(func=cmd_note)
 
     sp = sub.add_parser("repro", help="论文复现：vram 显存判级 / new 建复现工作区")

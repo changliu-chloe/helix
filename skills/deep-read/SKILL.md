@@ -29,7 +29,8 @@ uv run helix note new <arxiv_id> --domain "<第2步确定的方向>"
 ```
 - `--domain` 指定归档方向（可以是 config 里还没有的新方向）；省略则按 config 已有方向自动判定
 - 输出笔记文件路径（stdout）。骨架含 frontmatter（标题/作者/日期/分类/链接/领域）+ 摘要 + 待填小节
-- 笔记按方向分目录存放：`notes/papers/<方向>/<标题>.md`
+- 笔记按方向分目录存放：`notes/papers/<方向>/<短名>.md`
+- **文件名默认取短名**：作者自命名（如 `CoT-VLA:`、`Mamba:` 冒号前的缩写）会被保留；否则取标题前几个词。完整标题仍存在 frontmatter 里，不丢信息。读完后可按第 5.5 步改成更贴切的短名。
 - 已存在则跳过；要重建加 `--overwrite`（**注意：--overwrite 会覆盖已填的深读内容，慎用**）
 
 ### 4. 抓全文 + 高清图
@@ -66,6 +67,16 @@ uv run helix fetch <arxiv_id> --domain "<同上方向>"
 - 在图下方一句话说明它讲了什么
 
 保留 frontmatter 不动。语言跟随 config.yaml 的 `language`（zh/en）。
+
+### 5.5 读完后定名（按需）
+读透之后，判断第 3 步生成的短名是否贴切：
+- **作者已自命名**（标题冒号前有缩写/自取名，如 CoT-VLA、Mamba、Self-RAG）：**保持不动**，这就是社区通用的叫法。
+- **标题只是描述性的**（如 "Efficient Memory Management for LLM Serving"，短名会退化成前几个词）：按论文真正的**方法/创新名**改一个更贴切的短名。若论文里方法有名字（如 PagedAttention），用它。
+```bash
+uv run helix note rename <当前笔记路径> --name <新短名>
+```
+- rename 会**原地改名 + 自动同步全库指向它的 `[[wikilink]]`**，不丢引用；assets（按 arxiv id 存）不受影响。
+- 目标名已存在会报错（不覆盖），换个名或确认后加 `--overwrite`。
 
 ### 6. 自动链接 + 建索引
 ```bash

@@ -58,7 +58,8 @@ uv run helix search "vision language action" --top-n 5   # 检索并打分
 | `helix init` | 软链 skills 到 .claude/skills，启用自然语言触发 | ✅ |
 | `helix status` | 配置/库/索引状态 | ✅ |
 | `helix search "<query>"` | 检索 + 4维打分（arxiv/s2/dblp 多源合并去重） | ✅ |
-| `helix note new <id>` | 抓论文生成深读笔记骨架 | ✅ |
+| `helix note new <id>` | 抓论文生成深读笔记骨架（文件用短名） | ✅ |
+| `helix note rename <file> --name <短名>` | 改笔记短名 + 同步全库 wikilink | ✅ |
 | `helix note scan` | 扫描笔记库建关键词映射 | ✅ |
 | `helix note link <file>` | 正文关键词自动 wikilink | ✅ |
 | `helix index build` | 建/更新 FTS5 全文索引 | ✅ |
