@@ -390,12 +390,19 @@ def _wikilink_spans(text: str) -> list[tuple[int, int]]:
     return [(m.start(), m.end()) for m in re.finditer(r"\[\[.*?\]\]", text)]
 
 
-def link_keywords_in_text(text: str, keyword_index: dict[str, list[str]]) -> str:
-    """Replace keywords in a single line of text with [[path|original]]. Skip words shared across multiple papers and matches already inside a wikilink."""
+def link_keywords_in_text(text: str, keyword_index: dict[str, list[str]], self_rel: str | None = None) -> str:
+    """Replace keywords in a single line of text with [[path|original]].
+
+    Skips words shared across multiple papers (too broad), matches already inside a
+    wikilink, and — when self_rel is given — any keyword that only points back to the
+    note being linked (a note linking to itself is meaningless; only links to *other*
+    notes are useful).
+    """
     candidates = {
         kw: paths
         for kw, paths in keyword_index.items()
-        if kw.lower() not in COMMON_WORDS and 3 <= len(kw) <= 30 and not kw.isdigit() and len(paths) == 1
+        if kw.lower() not in COMMON_WORDS and 3 <= len(kw) <= 30 and not kw.isdigit()
+        and len(paths) == 1 and paths[0] != self_rel
     }
     result = text
     matched: set[str] = set()
@@ -419,23 +426,40 @@ def link_keywords_in_text(text: str, keyword_index: dict[str, list[str]]) -> str
     return result
 
 
-def link_file(path: Path, keyword_index: dict[str, list[str]]) -> int:
-    """Apply wikilink linking to a file's body, writing back in place. Returns the number of links added."""
+# Spans that must never be touched by keyword linking: inline code, markdown
+# links/images [text](url), autolinks <url>, and bare http(s) URLs. A keyword
+# that happens to appear inside a URL (e.g. github.com/.../ThunderAgent) is part
+# of the link, not prose — wrapping it in [[...]] corrupts the link.
+_PROTECT_RE = re.compile(
+    r"`[^`]+`"                       # inline code
+    r"|!?\[[^\]]*\]\([^)]*\)"        # markdown link / image
+    r"|<https?://[^>]+>"             # autolink
+    r"|https?://\S+",                # bare URL
+)
+
+
+def link_file(path: Path, keyword_index: dict[str, list[str]], cfg: Config | None = None) -> int:
+    """Apply wikilink linking to a file's body, writing back in place. Returns the number of links added.
+
+    When cfg is given, the note's own path is computed and passed as self_rel so the
+    note never links to itself. URLs and markdown links are protected from matching.
+    """
     content = path.read_text(encoding="utf-8")
+    self_rel = _note_rel(path, cfg) if cfg is not None else None
     before = len(re.findall(r"\[\[.*?\]\]", content))
     out_lines = []
     for line, skip in _split_protected_lines(content):
         if skip:
             out_lines.append(line)
             continue
-        # Protect inline code
-        codes: list[str] = []
+        # Protect inline code, URLs and markdown links from keyword matching
+        protected: list[str] = []
         def stash(m):
-            codes.append(m.group(0))
-            return f"\x00{len(codes)-1}\x00"
-        stashed = re.sub(r"`[^`]+`", stash, line)
-        linked = link_keywords_in_text(stashed, keyword_index)
-        for i, c in enumerate(codes):
+            protected.append(m.group(0))
+            return f"\x00{len(protected)-1}\x00"
+        stashed = _PROTECT_RE.sub(stash, line)
+        linked = link_keywords_in_text(stashed, keyword_index, self_rel=self_rel)
+        for i, c in enumerate(protected):
             linked = linked.replace(f"\x00{i}\x00", c)
         out_lines.append(linked)
     result = "\n".join(out_lines)
