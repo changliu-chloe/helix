@@ -7,6 +7,7 @@ Idempotent and safe to run repeatedly.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 # Project root = two levels up from this file (helix/init.py -> helix/ -> project root)
@@ -60,4 +61,38 @@ def link_skills(scope: str = "project") -> list[str]:
         link.symlink_to(target, target_is_directory=True)
         logs.append(f"已链接：{link} -> {target}")
 
+    return logs
+
+
+def prune_stale_skill_links(scope: str = "project") -> list[str]:
+    """Remove symlinks under .claude/skills that point into our skills/ dir but whose target no longer exists.
+
+    Handles skills deleted or renamed upstream: after a pull the old symlink would
+    dangle. Only touches symlinks resolving inside SKILLS_SRC — real dirs and links
+    the user added pointing elsewhere are left untouched. Returns an operation log.
+    """
+    logs: list[str] = []
+    dest_dir = _link_scope_dir(scope)
+    if not dest_dir.exists():
+        return logs
+
+    skills_root = SKILLS_SRC.resolve()
+    for entry in sorted(dest_dir.iterdir()):
+        if not entry.is_symlink():
+            continue
+        # os.readlink + manual resolve: the target may not exist, so entry.resolve() alone is ambiguous
+        raw = Path(os.readlink(entry))
+        target = raw if raw.is_absolute() else (entry.parent / raw)
+        try:
+            target_resolved = target.resolve()
+        except OSError:
+            target_resolved = target
+        # only consider links that belong to us (point into skills/)
+        try:
+            target_resolved.relative_to(skills_root)
+        except ValueError:
+            continue  # points elsewhere — not ours, leave it
+        if not target_resolved.exists():
+            entry.unlink()
+            logs.append(f"已清理失效软链（源已删除/改名）：{entry}")
     return logs
