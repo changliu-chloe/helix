@@ -30,21 +30,26 @@ uv pip install -e .
 cp config.example.yaml config.yaml
 # 按需编辑 config.yaml：research_domains、semantic_scholar_api_key、mineru_api_key
 
-# 3. 启用自然语言触发（把 skills 软链到 .claude/skills/）
-uv run helix init                    # 项目级：仅本项目目录下的 Claude Code 生效
-# uv run helix init --scope global   # 或全局：任何目录都能触发（软链到 ~/.claude/skills/）
+# 3. 启用自然语言触发（软链 skills + 规约到各 agent 的发现路径）
+uv run helix init                    # 项目级：本项目目录下的 agent 生效
+# uv run helix init --scope global   # 或全局：任何目录都能触发（软链到 ~/.claude/skills、~/.agents/skills）
 ```
 
 > **怎么调用 helix**：装在项目 venv 里、不在全局 PATH。推荐 `uv run helix ...`（自动定位项目
 > venv，任意目录可用）；或先 `source .venv/bin/activate` 后直接 `helix ...`；skills 里统一用 `uv run helix`。
 
-`helix init` 幂等，可反复执行；软链含本机绝对路径，已 gitignore，**每台机器 clone 后各自跑一次**。
-做完这步，就能在 Claude Code 等支持 skill 的 agent 里用自然语言触发 search / deep-read / daily，
-无需手敲命令。
+`helix init` 幂等，可反复执行；生成的软链含本机绝对路径，已 gitignore，**每台机器 clone 后各自跑一次**。
+它一次接线两套 agent，同一份 skills 与规约两边共享：
+
+- **Claude Code**：读 `CLAUDE.md` + `.claude/skills/`。
+- **Codex / Cursor / Trae 等**：读 `AGENTS.md` + `.agents/skills/`。`AGENTS.md` 是指向 `CLAUDE.md`
+  的软链（规约单一真源在 `CLAUDE.md`，不维护第二份）；skills 目录结构两家通用，直接兼容。
+
+做完这步，就能在上述任一 agent 里用自然语言触发 search / deep-read / daily，无需手敲命令。
 
 ### 升级（正在用的仓库 `git pull` 之后）
 
-`git pull` 只更新代码文件，不会自动接线：新增的 skill 不会软链到 `.claude`、新依赖不会装、config 新字段你也不会知道。拉完跑一次：
+`git pull` 只更新代码文件，不会自动接线：新增的 skill 不会软链到 `.claude` / `.agents`、`AGENTS.md` 不会补上、新依赖不会装、config 新字段你也不会知道。拉完跑一次：
 
 ```bash
 git pull
@@ -66,8 +71,8 @@ uv run helix search "vision language action" --top-n 5   # 检索并打分
 
 | 命令 | 说明 | 状态 |
 |---|---|---|
-| `helix init` | 软链 skills 到 .claude/skills，启用自然语言触发（首次搭建） | ✅ |
-| `helix migrate` | `git pull` 后追平：重链新 skill、清失效软链、提示 config/依赖/索引更新 | ✅ |
+| `helix init` | 软链 skills 到 .claude/skills + .agents/skills、AGENTS.md→CLAUDE.md，启用自然语言触发（首次搭建） | ✅ |
+| `helix migrate` | `git pull` 后追平：重链新 skill（含 .agents / AGENTS.md）、清失效软链、提示 config/依赖/索引更新 | ✅ |
 | `helix status` | 配置/库/索引状态 | ✅ |
 | `helix search "<query>"` | 检索 + 4维打分（arxiv/s2/dblp 多源合并去重） | ✅ |
 | `helix note new <id>` | 抓论文生成深读笔记骨架（文件用短名） | ✅ |

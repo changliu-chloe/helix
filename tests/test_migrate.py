@@ -24,6 +24,8 @@ class TestMigrate(unittest.TestCase):
         )
         self.lock = self.root / "uv.lock"
         self.lock.write_text("v1", encoding="utf-8")
+        self.claude_md = self.root / "CLAUDE.md"
+        self.claude_md.write_text("# conventions\n", encoding="utf-8")
 
         # user config: has language/notes_dir but NOT repro_dir or new_field
         self.user_cfg_path = self.root / "config.yaml"
@@ -34,6 +36,8 @@ class TestMigrate(unittest.TestCase):
         self._patches = [
             mock.patch.object(init, "PROJECT_ROOT", self.root),
             mock.patch.object(init, "SKILLS_SRC", self.root / "skills"),
+            mock.patch.object(init, "CONVENTIONS_SRC", self.claude_md),
+            mock.patch.object(init, "AGENTS_MD", self.root / "AGENTS.md"),
             mock.patch.object(migrate, "PROJECT_ROOT", self.root),
             mock.patch.object(migrate, "EXAMPLE_CONFIG", self.example),
             mock.patch.object(migrate, "LOCK_FILE", self.lock),
@@ -48,9 +52,11 @@ class TestMigrate(unittest.TestCase):
 
     def test_links_skills_and_reports_new_config_keys(self):
         report, _ = migrate.run_migrate(self.cfg, scope="project")
-        dest = self.root / ".claude" / "skills"
-        self.assertTrue((dest / "search").is_symlink())
-        self.assertEqual(len(report.linked), 2)
+        self.assertTrue((self.root / ".claude" / "skills" / "search").is_symlink())
+        self.assertTrue((self.root / ".agents" / "skills" / "search").is_symlink())
+        self.assertTrue((self.root / "AGENTS.md").is_symlink())
+        # 2 skills x 2 dirs + AGENTS.md = 5 new links
+        self.assertEqual(len(report.linked), 5)
         # repro_dir + new_field are in example but not in user config
         self.assertIn("repro_dir", report.new_config_keys)
         self.assertIn("new_field", report.new_config_keys)

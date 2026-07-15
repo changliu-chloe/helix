@@ -30,15 +30,21 @@ def _load_cfg(args: argparse.Namespace):
 
 
 def cmd_init(args: argparse.Namespace) -> int:
-    from .init import link_skills
+    from .init import link_agents_md, link_skills, list_skill_names
 
     logs = link_skills(scope=args.scope)
+    # AGENTS.md -> CLAUDE.md is per-repo; only wire it for project scope.
+    if args.scope != "global":
+        logs += link_agents_md()
     for line in logs:
         print(f"[helix] {line}", file=sys.stderr)
     linked = sum(1 for x in logs if x.startswith("已链接"))
     print(f"[helix] init 完成：新建 {linked} 个软链（scope={args.scope}）", file=sys.stderr)
-
-    from .init import list_skill_names
+    print(
+        "[helix] Claude Code 读 CLAUDE.md + .claude/skills；"
+        "Codex / Cursor / Trae 读 AGENTS.md + .agents/skills（同一套 skills 与规约）",
+        file=sys.stderr,
+    )
 
     names = list_skill_names()
     if names:
@@ -407,9 +413,9 @@ def build_parser() -> argparse.ArgumentParser:
     sp = sub.add_parser("status", help="显示配置/库/索引状态")
     sp.set_defaults(func=cmd_status)
 
-    sp = sub.add_parser("init", help="把 skills 软链到 .claude/skills，启用自然语言触发")
+    sp = sub.add_parser("init", help="软链 skills 到 .claude/skills + .agents/skills、AGENTS.md→CLAUDE.md，启用自然语言触发")
     sp.add_argument("--scope", choices=["project", "global"], default="project",
-                    help="project: 本项目 .claude/skills（默认）；global: ~/.claude/skills")
+                    help="project: 本项目 .claude/skills + .agents/skills（默认，含 AGENTS.md 软链）；global: ~/.claude/skills + ~/.agents/skills")
     sp.set_defaults(func=cmd_init)
 
     sp = sub.add_parser("migrate", help="git pull 后追平：重链 skill、清失效软链、提示 config/依赖/索引更新")
