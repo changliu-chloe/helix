@@ -53,7 +53,10 @@ class Config:
     notes_dir: str = "notes"
     papers_subdir: str = "papers"
     daily_subdir: str = "daily"
+    review_subdir: str = "reviews"
     repro_dir: str = "repro"
+    reviewer_model: str = "gpt-5.6-sol"
+    review_funnel_top_n: int = 10
     semantic_scholar_api_key: str = ""
     mineru_api_key: str = ""
     score_weights: dict[str, float] = field(default_factory=dict)
@@ -96,6 +99,11 @@ class Config:
     @property
     def daily_path(self) -> Path:
         return self.notes_path / self.daily_subdir
+
+    @property
+    def review_path(self) -> Path:
+        """Literature-review notes directory, under notes_path."""
+        return self.notes_path / self.review_subdir
 
     @property
     def repro_path(self) -> Path:
@@ -188,7 +196,10 @@ def load_config(path: str | None = None) -> Config:
         notes_dir=raw.get("notes_dir", "notes"),
         papers_subdir=raw.get("papers_subdir", "papers"),
         daily_subdir=raw.get("daily_subdir", "daily"),
+        review_subdir=raw.get("review_subdir", "reviews"),
         repro_dir=raw.get("repro_dir", "repro"),
+        reviewer_model=raw.get("reviewer_model", "gpt-5.6-sol") or "gpt-5.6-sol",
+        review_funnel_top_n=int(raw.get("review_funnel_top_n", 10) or 10),
         semantic_scholar_api_key=raw.get("semantic_scholar_api_key", "") or "",
         mineru_api_key=raw.get("mineru_api_key", "") or "",
         score_weights=dict(raw.get("score_weights") or {}),

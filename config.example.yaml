@@ -7,7 +7,15 @@ language: zh                 # zh | en，影响笔记语言
 notes_dir: notes             # 笔记库根目录（可改为你的 Obsidian vault 路径）
 papers_subdir: papers        # 单篇深读笔记子目录（相对 notes_dir）
 daily_subdir: daily          # 每日推荐笔记子目录（相对 notes_dir）
+review_subdir: reviews       # 文献综述笔记子目录（相对 notes_dir）
 repro_dir: repro             # 论文复现工作区根目录（与 notes_dir 平级）
+
+# 文献综述 / 独立评审打分（见 skills/review、skills/deep-read）
+# reviewer_model：经 Codex MCP 调用的独立评审模型，给论文打三维分（相关性/创新性/可靠性）。
+#   须为 OpenAI 模型（如 gpt-5.6-sol / o3 / gpt-4o）。用全新线程零先验上下文，避免自评虚高。
+reviewer_model: gpt-5.6-sol
+# review_funnel_top_n：方向检索做综述时，摘要级粗筛后取前 N 篇进精读（漏斗宽口→窄口）。可与需求商量调整。
+review_funnel_top_n: 10
 
 # Semantic Scholar API key（可选，留空走匿名限流接口）
 # 也可用环境变量 SEMANTIC_SCHOLAR_API_KEY

@@ -12,6 +12,8 @@ from pathlib import Path
 
 import yaml
 
+from datetime import date
+
 from . import frontmatter, naming
 from .config import Config
 from .models import Paper
@@ -196,6 +198,50 @@ def write_note(paper: Paper, cfg: Config, overwrite: bool = False, name: str | N
     if not path.exists() or path.stat().st_size == 0:
         raise OSError(f"笔记写入失败，文件未落盘：{path}")
     return path, True
+
+
+def set_review_scores(
+    path: Path,
+    *,
+    relevance: float | None = None,
+    novelty: float | None = None,
+    reliability: float | None = None,
+    reviewer_model: str | None = None,
+    note: str | None = None,
+    scored_at: str | None = None,
+) -> dict:
+    """Write/update a `review_scores` block in a paper note's frontmatter (idempotent).
+
+    The three scores (0-10) come from an independent reviewer (codex MCP) after a
+    deep read; see skills/deep-read. Only the deterministic write lives here -- the
+    scoring judgment is the agent's. Preserves the body and all other frontmatter
+    keys; re-scoring overwrites in place. Returns the review_scores dict written.
+    """
+    path = Path(path)
+    if not path.exists():
+        raise OSError(f"笔记不存在：{path}")
+    content = path.read_text(encoding="utf-8", errors="replace")
+    fm, body = frontmatter.split(content)
+    if not fm:
+        raise OSError(f"笔记缺少 frontmatter，无法写入打分：{path}")
+
+    scores = dict(fm.get("review_scores") or {})
+    if relevance is not None:
+        scores["relevance"] = round(float(relevance), 1)
+    if novelty is not None:
+        scores["novelty"] = round(float(novelty), 1)
+    if reliability is not None:
+        scores["reliability"] = round(float(reliability), 1)
+    if reviewer_model is not None:
+        scores["model"] = reviewer_model
+    if note is not None:
+        scores["notes"] = note
+    scores["scored_at"] = scored_at or date.today().isoformat()
+
+    fm["review_scores"] = scores
+    new_fm = yaml.safe_dump(fm, allow_unicode=True, sort_keys=False, default_flow_style=False)
+    path.write_text(f"---\n{new_fm}---\n{body}", encoding="utf-8")
+    return scores
 
 
 def rename_note(old_path: Path, new_name: str, cfg: Config, *, overwrite: bool = False) -> tuple[Path, int]:
