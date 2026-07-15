@@ -269,7 +269,7 @@ def cmd_note(args: argparse.Namespace) -> int:
             _err(f"文件不存在：{target}")
             return 1
         index = notes_mod.scan_notes(cfg)
-        added = notes_mod.link_file(target, index["keyword_to_notes"])
+        added = notes_mod.link_file(target, index["keyword_to_notes"], cfg)
         print(f"[helix] {target}: 新增 {added} 个 wikilink", file=sys.stderr)
         return 0
 

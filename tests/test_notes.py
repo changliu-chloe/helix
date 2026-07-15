@@ -237,6 +237,63 @@ class TestLinkKeywords(unittest.TestCase):
         out = notes.link_keywords_in_text("a good model here", idx)
         self.assertEqual(out, "a good model here")
 
+    def test_self_link_skipped(self):
+        # a keyword pointing only to the note being linked -> self-reference, skip it
+        idx = {"thunderagent": ["papers/Agentic/ThunderAgent.md"]}
+        text = "we open-source the whole ThunderAgent here"
+        out = notes.link_keywords_in_text(text, idx, self_rel="papers/Agentic/ThunderAgent.md")
+        self.assertEqual(out, text)
+
+    def test_other_note_still_linked_when_self_rel_set(self):
+        # self_rel only suppresses self-links; links to other notes still happen
+        idx = {"cot-vla": ["papers/VLA/CoT-VLA.md"]}
+        out = notes.link_keywords_in_text("受 CoT-VLA 启发", idx, self_rel="papers/VLA/OtherPaper.md")
+        self.assertEqual(out, "受 [[papers/VLA/CoT-VLA.md|CoT-VLA]] 启发")
+
+
+class TestLinkFile(unittest.TestCase):
+    """Regression for the wikilink bug: no self-links, no linking inside URLs."""
+
+    def _cfg_and_note(self, tmp, body):
+        from pathlib import Path
+
+        cfg = Config(notes_dir=str(Path(tmp) / "notes"), papers_subdir="papers")
+        note = cfg.papers_path / "Agentic推理系统" / "ThunderAgent.md"
+        note.parent.mkdir(parents=True, exist_ok=True)
+        note.write_text(f"---\ntitle: ThunderAgent\n---\n\n{body}", encoding="utf-8")
+        return cfg, note
+
+    def test_no_self_link_and_url_protected(self):
+        import tempfile
+
+        # keyword "ThunderAgent" points to this very note; it appears both in prose and in a URL
+        idx = {"thunderagent": ["papers/Agentic推理系统/ThunderAgent.md"]}
+        body = (
+            "we open-source the whole ThunderAgent at: "
+            "https://github.com/Agentic-Kinetics/ThunderAgent\n"
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg, note = self._cfg_and_note(tmp, body)
+            added = notes.link_file(note, idx, cfg)
+            out = note.read_text(encoding="utf-8")
+            self.assertEqual(added, 0)              # nothing linked
+            self.assertNotIn("[[", out)             # neither prose nor URL got wrapped
+            self.assertIn("github.com/Agentic-Kinetics/ThunderAgent", out)  # URL intact
+
+    def test_links_other_note_but_not_in_url(self):
+        import tempfile
+
+        # a DIFFERENT note's keyword should link in prose, but never inside a URL
+        idx = {"cot-vla": ["papers/VLA/CoT-VLA.md"]}
+        body = "inspired by CoT-VLA, see https://arxiv.org/abs/CoT-VLA-xyz\n"
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg, note = self._cfg_and_note(tmp, body)
+            notes.link_file(note, idx, cfg)
+            out = note.read_text(encoding="utf-8")
+            self.assertIn("[[papers/VLA/CoT-VLA.md|CoT-VLA]]", out)  # prose linked
+            self.assertIn("https://arxiv.org/abs/CoT-VLA-xyz", out)  # URL untouched
+            self.assertEqual(out.count("[["), 1)                    # only the prose one
+
 
 if __name__ == "__main__":
     unittest.main()
