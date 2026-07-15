@@ -4,9 +4,25 @@ helix：人在环中的科研全流程助手（读 → 复现 → 写）。Pytho
 
 ## 一、分支与合并（main 只进稳定代码）
 
-- 任何功能、修复都先 `git checkout -b <type>/<slug>`（如 `feat/write-module`、`fix/index-scan`），**禁止在 main 上直接开发**。
+- **每个功能/修复都在独立的 git worktree 里做**，不管是否并行。主仓库目录（`helix/`）保持在稳定分支、不动，新工作放到平级的外部目录：
+
+  ```bash
+  git worktree add ../helix-<slug> -b <type>/<slug> main   # 从 main 拉新分支，展开到外部目录
+  ```
+
+  （如 `git worktree add ../helix-write -b feat/write-module main`）。这样主目录随时可用、并行互不踩、分支被 git 强制互斥占用。**禁止在 main 上直接开发**。
+- **新 worktree 是干净工作区，不带 gitignore 的本地物**（`.venv`、`helix init` 软链的 `.claude/skills`、`.helix/index.db`／笔记库／复现工作区等本地数据都不会跟过来）。进目录先初始化：
+
+  ```bash
+  cd ../helix-<slug>
+  uv sync                 # 装依赖
+  uv run helix init       # 幂等软链 skills
+  ```
+
+  涉及本地数据（笔记/索引/复现区）的活，用外部固定路径或指向主库，别在临时 worktree 里生成一份又随删除丢掉——对齐第二节「不丢用户数据」。
 - 分支内完成 → 补/跑测试（`uv run pytest`）→ 交付说明 → **等我确认后再 merge**。不要自作主张合回 main。
 - merge 前自检：测试全绿、无残留调试代码、README/命令表与实现一致。
+- 合并并 `git branch -d` 后，清掉工作目录：`git worktree remove ../helix-<slug>`（只删工作区，历史/对象都在主 `.git/`，不丢）。多个分支先后 merge 时，后合的先 `git rebase main` 或 merge 一下再合，处理公共文件冲突。
 
 ## 二、迭代必须可迁移（不丢用户数据）
 
