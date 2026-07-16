@@ -105,8 +105,10 @@ uv run helix search "vision language action" --top-n 5   # 检索并打分
 | `helix index build` | 建/更新 FTS5 全文索引 | ✅ |
 | `helix index search "<q>"` | 本地全文检索（bm25 + snippet） | ✅ |
 | `helix fetch <id>` | 抓全文（MinerU）+ 高清图（源码包）到 assets/ | ✅ |
-| `helix repro vram --params <B>` | 显存估算 + 对各硬件档判级（装得下/量化/多卡TP/offload） | ✅ |
-| `helix repro new <笔记\|id>` | 建论文复现工作区骨架（setup.md + plan.md），`--draft` 落 draft_notes | ✅ |
+| `helix exp vram --params <B>` | 显存估算 + 对各硬件档判级（装得下/量化/多卡TP/offload） | ✅ |
+| `helix exp new <笔记\|id>` | 建复现工作区骨架（setup+plan+results/+RESULTS_LAYOUT+sync.yaml），`--draft` 落 draft_notes | ✅ |
+| `helix exp new --mine "<实验名>"` | 建我自己的实验工作区（type:mine，无 setup.md，plan.md 即实验设计） | ✅ |
+| `helix exp push/pull <工作区>` | 本地↔远程 GPU 传送带（rsync 封装，`--dry-run` 预览；结果只回流 results/） | ✅ |
 | `helix note score <file> --relevance/--novelty/--reliability <N>` | 把独立评审的三维打分写进笔记 frontmatter | ✅ |
 | `helix review new "<topic>"` | 建文献综述骨架（逐篇打分表 + 综合分析 + 相关文献补充） | ✅ |
 
@@ -122,7 +124,7 @@ agent 负责需要 LLM 的深读与总结：
 - `skills/search/` — 检索路由：本地 FTS vs 跨源检索
 - `skills/deep-read/` — 单篇深读：建骨架 → 读全文填充 → 链接 + 建索引
 - `skills/daily/` — 开启研究日：批量检索 → 推荐笔记 → top-N 深读
-- `skills/reproduce/` — 论文复现规划：抽取实验设置 → 可复现性分级 → 按 GPU 判级适配 → 产出可执行复现方案（借鉴 ref/deepcode 的 Paper2Code）
+- `skills/reproduce/` — 论文复现规划：抽取实验设置 → 可复现性分级 → 按 GPU 判级适配 → 产出可执行复现方案（借鉴 ref/deepcode 的 Paper2Code）。笔记在本地、实验在远程时，用 `helix exp push/pull` 传方案、回结果（见 [docs/reproduce-sync.md](docs/reproduce-sync.md)）
 - `skills/review/` — 文献综述：两条路径（已有笔记汇总 / 方向检索汇总），漏斗式「粗筛→入选精读→综合」，逐篇由独立评审（Codex MCP）打相关性/创新性/可靠性三维分
 
 `helix init` 后即可在对话里自然语言触发，例如直接说「读这篇论文：2503.22020」。

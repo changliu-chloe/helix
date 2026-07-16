@@ -20,7 +20,7 @@ class TestMigrate(unittest.TestCase):
             (d / "SKILL.md").write_text("---\nname: %s\n---\n" % name, encoding="utf-8")
         self.example = self.root / "config.example.yaml"
         self.example.write_text(
-            "language: zh\nnotes_dir: notes\nrepro_dir: repro\nnew_field: 1\n", encoding="utf-8"
+            "language: zh\nnotes_dir: notes\nexperiments_dir: experiments\nnew_field: 1\n", encoding="utf-8"
         )
         self.lock = self.root / "uv.lock"
         self.lock.write_text("v1", encoding="utf-8")
@@ -57,8 +57,8 @@ class TestMigrate(unittest.TestCase):
         self.assertTrue((self.root / "AGENTS.md").is_symlink())
         # 2 skills x 2 dirs + AGENTS.md = 5 new links
         self.assertEqual(len(report.linked), 5)
-        # repro_dir + new_field are in example but not in user config
-        self.assertIn("repro_dir", report.new_config_keys)
+        # experiments_dir + new_field are in example but not in user config
+        self.assertIn("experiments_dir", report.new_config_keys)
         self.assertIn("new_field", report.new_config_keys)
         self.assertNotIn("language", report.new_config_keys)
 
@@ -93,6 +93,46 @@ class TestMigrate(unittest.TestCase):
         migrate.run_migrate(self.cfg, scope="project")
         state = self.root / ".helix" / "state.json"
         self.assertTrue(state.exists())
+
+    def test_repro_move_pending_without_yes(self):
+        # legacy repro/ present; without --yes it's only reported, never moved
+        legacy = self.root / "repro" / "domX" / "paperY"
+        legacy.mkdir(parents=True)
+        (legacy / "plan.md").write_text("plan", encoding="utf-8")
+        report, _ = migrate.run_migrate(self.cfg, scope="project", do_move=False)
+        self.assertTrue(report.repro_rename_pending)
+        self.assertFalse(report.repro_renamed)
+        self.assertTrue((self.root / "repro").exists())          # untouched
+        self.assertFalse((self.root / "experiments").exists())
+
+    def test_repro_move_with_yes_preserves_all_files(self):
+        legacy = self.root / "repro" / "domX" / "paperY"
+        legacy.mkdir(parents=True)
+        (legacy / "plan.md").write_text("plan", encoding="utf-8")
+        (legacy / "setup.md").write_text("setup", encoding="utf-8")
+        report, _ = migrate.run_migrate(self.cfg, scope="project", do_move=True)
+        self.assertTrue(report.repro_renamed)
+        self.assertFalse((self.root / "repro").exists())         # source removed after verify
+        moved = self.root / "experiments" / "domX" / "paperY"
+        self.assertTrue((moved / "plan.md").exists())
+        self.assertTrue((moved / "setup.md").exists())           # nothing lost
+
+    def test_repro_move_skips_when_target_exists(self):
+        (self.root / "repro" / "d").mkdir(parents=True)
+        (self.root / "repro" / "d" / "plan.md").write_text("x", encoding="utf-8")
+        (self.root / "experiments").mkdir()                      # target already there
+        report, _ = migrate.run_migrate(self.cfg, scope="project", do_move=True)
+        self.assertFalse(report.repro_renamed)                   # refuses to merge/overwrite
+        self.assertTrue((self.root / "repro").exists())          # source preserved
+
+    def test_results_md_upgraded_to_index(self):
+        ws = self.root / "experiments" / "d" / "p"
+        ws.mkdir(parents=True)
+        (ws / "results.md").write_text("old results", encoding="utf-8")
+        report, _ = migrate.run_migrate(self.cfg, scope="project")
+        self.assertFalse((ws / "results.md").exists())
+        self.assertEqual((ws / "results" / "index.md").read_text(encoding="utf-8"), "old results")
+        self.assertTrue(report.results_upgraded)
 
 
 if __name__ == "__main__":

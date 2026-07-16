@@ -15,6 +15,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+import yaml
+
 from .config import Config, HardwareProfile
 
 # Bytes per parameter: inference weights computed by precision
@@ -278,6 +280,43 @@ def build_setup_skeleton(title: str, note_rel: str, cfg: Config) -> str:
 """
 
 
+def build_mine_plan_skeleton(title: str, note_rel: str, cfg: Config) -> str:
+    """Skeleton for my own experiment design (type:mine). plan.md IS the experiment design -- no setup.md,
+    since there's no original paper to transcribe. It references the papers this experiment builds on / compares against.
+    """
+    ref = f"> 对标/借鉴：[[{note_rel}]]\n" if note_rel else ""
+    return f"""# 实验设计：{title}
+
+{ref}> 这是我自己的实验（type:mine）。本文件既是设计也是执行方案；结果落 results/。
+
+## 1. 研究问题 / 假设
+<!-- agent: 这个实验要验证什么假设、回答什么问题；和对标论文的关系（改进/对比/消融） -->
+
+## 2. 方法与实现
+<!-- agent: 用什么模型/数据/算法；核心实现点；相对 baseline 改了什么 -->
+
+## 3. 硬件与运行方案
+可用硬件档：
+{_profile_lines(cfg)}
+
+<!-- agent: 用哪台机、精度/并行、显存核对（下面命令跑一下贴结果） -->
+```bash
+uv run helix exp vram --params <B> --dtype <精度> --ctx <长度> --batch <N> [--layers L --hidden H]
+```
+
+## 4. 分步执行命令
+<!-- agent: 从建环境到出指标的可复制命令，带上 TP 度/并发等参数 -->
+```bash
+# 1. 建环境 + 准备代码/数据
+# 2. 跑实验（带参数）
+# 3. 评测出指标，按 RESULTS_LAYOUT.md 落到 results/
+```
+
+## 5. 评测与预期
+<!-- agent: 算什么指标、baseline 对比、预期区间、验收标准 -->
+"""
+
+
 def build_plan_skeleton(title: str, note_rel: str, cfg: Config) -> str:
     """Skeleton for the reproduction action plan. Recommended plan first, comparison with the paper last.
 
@@ -305,7 +344,7 @@ def build_plan_skeleton(title: str, note_rel: str, cfg: Config) -> str:
 
 **显存核对**（跑一下贴结果）：
 ```bash
-uv run helix repro vram --params <B> --dtype <精度> --ctx <长度> --batch <N> [--layers L --hidden H]
+uv run helix exp vram --params <B> --dtype <精度> --ctx <长度> --batch <N> [--layers L --hidden H]
 ```
 <!-- agent: 贴判级结论：fits_single / fits_multi_tp(TP=?) / needs_quant… -->
 
@@ -350,23 +389,113 @@ uv run helix repro vram --params <B> --dtype <精度> --ctx <长度> --batch <N>
 """
 
 
-def build_repro_workspace(
-    title: str, note_rel: str, domain: str, short_name: str, cfg: Config,
-    *, draft: bool = False, overwrite: bool = False,
-) -> tuple[Path, list[str]]:
-    """Generate setup.md + plan.md skeletons under repro/<domain>/<short_name>/ (or draft_notes/).
+def build_results_index_skeleton(title: str, note_rel: str, kind: str, domain: str) -> str:
+    """Skeleton for results/index.md -- the curated results note (goes into the FTS index, links back to the paper).
 
-    Returns (workspace dir, list of newly created filenames). Verifies non-empty after persisting, else raises OSError.
+    kind: "repro" (reproducing someone else's paper) or "mine" (my own experiment). frontmatter type drives
+    write-phase retrieval: repro -> experiments/comparison, mine -> contribution.
     """
-    ws = cfg.repro_workspace_path(domain, short_name, draft=draft)
+    fm = {
+        "title": f"{title} · 结果" if kind == "repro" else f"{title}（我的实验）· 结果",
+        "type": kind,                       # repro | mine
+        "domain": domain,
+        "tags": ["helix", "experiment", kind],
+        "links": [note_rel] if note_rel else [],  # repro: paper reproduced; mine: papers built on/compared against
+    }
+    body = yaml.safe_dump(fm, allow_unicode=True, sort_keys=False, default_flow_style=False)
+    link = f"[[{note_rel}]]" if note_rel else "（无）"
+    origin = "复现的论文" if kind == "repro" else "对标/借鉴的论文"
+    return f"""---
+{body}---
+# 结果：{title}
+
+> {origin}：{link} ｜ 方案见同目录 plan.md ｜ 原始数据在 results/{{metrics,plots,tables}}/
+
+## 结果概览
+<!-- agent: 把 results/metrics、results/plots、results/tables 里的原始数据蒸馏成表/图 + 一句话结论 -->
+
+## 与预期/原文的对比
+<!-- agent: 复现→对齐原文表几、差多少；我的实验→对比 baseline。等价复现/缩比降配讲清楚 -->
+
+## 精读时没发现的问题
+<!-- agent: 复现/实验过程暴露、但精读论文时没注意到的问题——本节价值最高，务必如实记。
+没有就写「暂无」，别硬凑。 -->
+
+## 撰稿可用素材
+<!-- agent: 哪些结果/图表可直接进论文；对应哪一节（相关工作 / 实验 / 贡献） -->
+"""
+
+
+# Minimal contract file pushed to the remote: tells the coding agent where to drop experiment
+# artifacts, so the local pull glob has a stable place to fetch from. Kept deliberately simple;
+# iterate this one file (naming rules, per-run dirs, manifest) as needs grow -- push/pull follow.
+RESULTS_LAYOUT = """# 实验结果存放规则（远程 agent 请遵守）
+
+跑完实验，把产物放到本工作区的 results/ 下（helix exp pull 只从这三个子目录回拉）：
+
+- results/metrics/  指标数据（*.json / *.csv），文件名带实验标识
+- results/plots/    图（*.png / *.pdf）
+- results/tables/   表（*.csv / *.md）
+
+不要把模型权重、checkpoint、完整日志放进 results/——那些留在远程，不回流本地。
+"""
+
+
+def build_sync_yaml(kind: str) -> str:
+    """Per-workspace sync.yaml: which remote this experiment uses + which files push/pull.
+
+    Lives next to the experiment (travels with the workspace). `remote:` references a name in config.remotes.
+    """
+    push = ["plan.md", "scripts/**", "configs/**", "RESULTS_LAYOUT.md"]
+    if kind == "repro":
+        push.insert(0, "setup.md")
+    spec = {
+        "remote": "",  # fill with a name from config.remotes; empty = transport disabled for this workspace
+        "push": push,
+        "pull": ["results/metrics/**", "results/plots/**", "results/tables/**"],
+    }
+    header = ("# 本实验的传送清单。remote 填 config.yaml remotes 里的机器名。\n"
+              "# push: 推到远程的文件（RESULTS_LAYOUT.md 必带，是远程写盘约定）。\n"
+              "# pull: 从远程回拉的结果（对齐 RESULTS_LAYOUT.md 的三个子目录）。\n")
+    return header + yaml.safe_dump(spec, allow_unicode=True, sort_keys=False, default_flow_style=False)
+
+
+def build_experiment_workspace(
+    title: str, note_rel: str, domain: str, short_name: str, cfg: Config,
+    *, kind: str = "repro", draft: bool = False, overwrite: bool = False,
+) -> tuple[Path, list[str]]:
+    """Generate an experiment workspace skeleton under experiments/<domain>/<short_name>/ (or draft_notes/).
+
+    kind="repro" (reproduce a paper): setup.md + plan.md + results/index.md + RESULTS_LAYOUT.md + sync.yaml.
+    kind="mine" (my own experiment): plan.md (= experiment design) + results/index.md + RESULTS_LAYOUT.md + sync.yaml
+        (no setup.md -- there is no original paper to transcribe).
+
+    Returns (workspace dir, list of newly created relative paths). Verifies non-empty after persisting, else raises OSError.
+    """
+    if kind not in ("repro", "mine"):
+        raise ValueError(f"未知实验类型 '{kind}'，应为 repro 或 mine")
+    ws = cfg.experiment_workspace_path(domain, short_name, draft=draft)
     ws.mkdir(parents=True, exist_ok=True)
+
+    # (relative path, content) — setup.md only for repro; plan.md differs by kind.
+    items: list[tuple[str, str]] = []
+    if kind == "repro":
+        items.append(("setup.md", build_setup_skeleton(title, note_rel, cfg)))
+        items.append(("plan.md", build_plan_skeleton(title, note_rel, cfg)))
+    else:
+        items.append(("plan.md", build_mine_plan_skeleton(title, note_rel, cfg)))
+    items.append(("results/index.md", build_results_index_skeleton(title, note_rel, kind, domain)))
+    items.append(("RESULTS_LAYOUT.md", RESULTS_LAYOUT))
+    items.append(("sync.yaml", build_sync_yaml(kind)))
+
     created: list[str] = []
-    for fname, builder in (("setup.md", build_setup_skeleton), ("plan.md", build_plan_skeleton)):
-        fpath = ws / fname
+    for rel, content in items:
+        fpath = ws / rel
         if fpath.exists() and not overwrite:
             continue
-        fpath.write_text(builder(title, note_rel, cfg), encoding="utf-8")
+        fpath.parent.mkdir(parents=True, exist_ok=True)
+        fpath.write_text(content, encoding="utf-8")
         if not fpath.exists() or fpath.stat().st_size == 0:
-            raise OSError(f"复现骨架写入失败，文件未落盘：{fpath}")
-        created.append(fname)
+            raise OSError(f"实验骨架写入失败，文件未落盘：{fpath}")
+        created.append(rel)
     return ws, created
