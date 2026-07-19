@@ -440,29 +440,195 @@ def cmd_repro(args: argparse.Namespace) -> int:
         print(str(ws))
         return 0
 
-    if args.action in ("push", "pull"):
-        from . import sync as sync_mod
+    if args.action in ("push", "pull", "run", "probe", "sessions", "kill", "start"):
+        return _cmd_exp_remote(args, cfg)
 
-        if not args.target:
-            print(f"[helix] exp {args.action} 需要工作区路径", file=sys.stderr)
+    return 2
+
+
+def _resolve_workspace_remote(cfg, ws):
+    """From a workspace dir, load sync.yaml and resolve its Remote. Returns (remote, err_msg)."""
+    from . import ssh as ssh_mod
+    from . import sync as sync_mod
+
+    try:
+        spec = sync_mod.load_sync_spec(ws)
+        remote = ssh_mod.require_remote(cfg, spec.remote)
+        return remote, None
+    except (FileNotFoundError, ValueError) as e:
+        return None, str(e)
+
+
+EXP_REMOTE_PATH_UNSET = 3  # exit code: workspace has no confirmed remote_path yet
+
+
+def _resolve_remote_path(cfg, ws, remote, args):
+    """Resolve the confirmed remote_path, honoring --remote-path first-time confirmation.
+
+    Returns (remote_path, exit_code). exit_code is None when resolved; an int to return otherwise.
+    On first use with no --remote-path, prints the suggested default and returns exit code 3
+    (nothing on the remote is touched). With --remote-path, writes it back to sync.yaml and proceeds.
+    """
+    from . import sync as sync_mod
+
+    spec = sync_mod.load_sync_spec(ws)
+    confirmed = sync_mod.resolve_remote_path(spec)
+    given = getattr(args, "remote_path", None)
+
+    if confirmed and given and given != confirmed:
+        sync_mod.set_remote_path(ws, given)  # explicit user override wins
+        print(f"[helix] ⚠ 已覆盖远程路径映射：{confirmed} → {given}", file=sys.stderr)
+        return given, None
+    if confirmed:
+        return confirmed, None
+    if given:
+        sync_mod.set_remote_path(ws, given)
+        print(f"[helix] 已确认远程路径并写入 sync.yaml：{given}", file=sys.stderr)
+        return given, None
+
+    # first use, not confirmed: suggest default, do NOT touch the remote
+    default = sync_mod.default_remote_path(remote, ws)
+    print(f"[helix] 本工作区尚未确认远程路径。建议：{default}", file=sys.stderr)
+    print(f"[helix] 确认就重跑并加 --remote-path {default}（可改成别的路径）", file=sys.stderr)
+    return None, EXP_REMOTE_PATH_UNSET
+
+
+def _cmd_exp_remote(args, cfg) -> int:
+    """Remote execution actions: run / probe / sessions / kill / start. Credentials stay in the CLI."""
+    from . import secrets as secrets_mod
+    from . import ssh as ssh_mod
+
+    if not args.target:
+        print(f"[helix] exp {args.action} 需要工作区路径", file=sys.stderr)
+        return 1
+    ws = Path(args.target)
+    if not ws.is_dir():
+        print(f"[helix] 工作区不存在或不是目录：{ws}", file=sys.stderr)
+        return 1
+
+    remote, err = _resolve_workspace_remote(cfg, ws)
+    if remote is None:
+        print(f"[helix] {err}", file=sys.stderr)
+        return 1
+    secrets = secrets_mod.load_secrets(cfg.base_dir)
+
+    # sessions / kill don't need a workspace path on the remote — handle before path resolution.
+    if args.action == "sessions":
+        res = ssh_mod.list_sessions(cfg, secrets, remote)
+        print(res.stdout.rstrip() or "（无远程 tmux 会话）")
+        return 0
+
+    if args.action == "kill":
+        if not args.session:
+            print("[helix] exp kill 需要 --session <会话名>", file=sys.stderr)
             return 1
-        ws = Path(args.target)
-        if not ws.is_dir():
-            print(f"[helix] 工作区不存在或不是目录：{ws}", file=sys.stderr)
+        res = ssh_mod.kill_session(cfg, secrets, remote, args.session)
+        ok = res.returncode == 0
+        print(f"[helix] {'已杀会话' if ok else '杀会话失败'}：{remote.name}:{args.session}", file=sys.stderr)
+        return 0 if ok else 1
+
+    if args.action == "probe":
+        # probe tolerates an unconfirmed path (falls back to remote root); pass confirmed path if any.
+        from . import sync as sync_mod
+        confirmed = sync_mod.resolve_remote_path(sync_mod.load_sync_spec(ws))
+        info = ssh_mod.probe(cfg, secrets, remote, remote_path=confirmed)
+        print(json.dumps(info, ensure_ascii=False, indent=2))
+        d = info.get("disk", {})
+        if d:
+            print(f"[helix] 磁盘可用 {d.get('avail')}（已用 {d.get('use_pct')}）", file=sys.stderr)
+        for g in info.get("gpus", []):
+            print(f"  - GPU{g['index']}: {g['mem_used_mb']}/{g['mem_total_mb']}MB, 利用率 {g['util_pct']}%", file=sys.stderr)
+        if not info.get("has_gpu"):
+            print("[helix] 远程未探测到 nvidia-smi（无 GPU 或未装驱动）", file=sys.stderr)
+        return 0 if info.get("returncode") == 0 else 1
+
+    if args.action == "run":
+        if not args.cmd:
+            print("[helix] exp run 需要 --cmd \"<命令>\"", file=sys.stderr)
             return 1
+        remote_path, code = _resolve_remote_path(cfg, ws, remote, args)
+        if remote_path is None:
+            return code
+        session = args.session or "helix-exp"
         try:
-            fn = sync_mod.push if args.action == "push" else sync_mod.pull
-            res = fn(cfg, ws, dry_run=args.dry_run)
-        except (FileNotFoundError, ValueError) as e:
+            res = ssh_mod.run_in_tmux(
+                cfg, secrets, remote, remote_path, args.cmd,
+                session=session, oneshot=args.oneshot, use_sudo=args.sudo,
+            )
+        except FileNotFoundError as e:
             print(f"[helix] {e}", file=sys.stderr)
             return 1
         for w in res.warnings:
             print(f"[helix] ⚠ {w}", file=sys.stderr)
-        tag = "（dry-run 预览，未实际传输）" if res.dry_run else ""
-        print(f"[helix] exp {res.direction} → remote '{res.remote_name}':{res.remote_dir} {tag}", file=sys.stderr)
+        mode = "oneshot（跑完退会话）" if args.oneshot else "常驻（保留会话）"
+        print(f"[helix] exp run → {remote.name}:{remote_path} tmux 会话 '{session}'（{mode}）", file=sys.stderr)
+        if res.stdout.strip():
+            print(res.stdout.rstrip(), file=sys.stderr)
         return 0 if res.returncode == 0 else 1
 
+    if args.action in ("push", "pull"):
+        remote_path, code = _resolve_remote_path(cfg, ws, remote, args)
+        if remote_path is None:
+            return code
+        return _cmd_exp_transfer(args, cfg, ws)
+
+    if args.action == "start":
+        remote_path, code = _resolve_remote_path(cfg, ws, remote, args)
+        if remote_path is None:
+            return code
+        return _cmd_exp_start(args, cfg, ws, remote)
+
     return 2
+
+
+def _cmd_exp_transfer(args, cfg, ws) -> int:
+    """exp push / pull over scp, after the remote path is confirmed."""
+    from . import sync as sync_mod
+
+    try:
+        fn = sync_mod.push if args.action == "push" else sync_mod.pull
+        res = fn(cfg, ws, dry_run=args.dry_run)
+    except (FileNotFoundError, ValueError) as e:
+        print(f"[helix] {e}", file=sys.stderr)
+        return 1
+    for w in res.warnings:
+        print(f"[helix] ⚠ {w}", file=sys.stderr)
+    tag = "（dry-run 预览，未实际传输）" if res.dry_run else ""
+    print(f"[helix] exp {res.direction} → {res.remote_name}:{res.remote_dir} {tag}", file=sys.stderr)
+    return 0 if res.returncode == 0 else 1
+
+
+def _cmd_exp_start(args, cfg, ws, remote) -> int:
+    """Start a round: enforce a clean tree (auto-commit if dirty), push to remote, report the commit."""
+    from . import sync as sync_mod
+    from . import vcs as vcs_mod
+
+    repo = cfg.base_dir
+    try:
+        if not vcs_mod.is_clean(repo):
+            msg = args.message or "实验轮次：本地改动"
+            commit = vcs_mod.commit_round(repo, msg)
+            print(f"[helix] 本轮改动已提交：{commit} — {msg}", file=sys.stderr)
+        else:
+            commit = vcs_mod.current_commit(repo)
+            print(f"[helix] 工作区干净，当前提交：{commit}", file=sys.stderr)
+    except (FileNotFoundError, RuntimeError) as e:
+        print(f"[helix] git 步骤失败：{e}", file=sys.stderr)
+        return 1
+
+    try:
+        res = sync_mod.push(cfg, ws, dry_run=args.dry_run)
+    except (FileNotFoundError, ValueError) as e:
+        print(f"[helix] push 失败：{e}", file=sys.stderr)
+        return 1
+    for w in res.warnings:
+        print(f"[helix] ⚠ {w}", file=sys.stderr)
+    out = {"commit": commit, "remote": res.remote_name, "remote_dir": res.remote_dir, "dry_run": res.dry_run}
+    print(json.dumps(out, ensure_ascii=False, indent=2))
+    tag = "（dry-run，未实际传输）" if res.dry_run else ""
+    print(f"[helix] 开始实验：代码 {commit} 已推到 {res.remote_name}:{res.remote_dir} {tag}", file=sys.stderr)
+    print("[helix] 下一步：uv run helix exp run <工作区> --cmd \"<跑实验命令>\" --session <名>", file=sys.stderr)
+    return 0 if res.returncode == 0 else 1
 
 
 def _resolve_target(cfg, target: str, domain_arg: str | None):
@@ -549,9 +715,9 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--overwrite", action="store_true", help="new: 覆盖已存在的综述骨架")
     sp.set_defaults(func=cmd_review)
 
-    sp = sub.add_parser("exp", help="实验/复现：vram 显存判级 / new 建工作区 / push·pull 本地-远程传送")
-    sp.add_argument("action", choices=["vram", "new", "push", "pull"])
-    sp.add_argument("target", nargs="?", help="new: 笔记路径或 arXiv id；push/pull: 工作区路径")
+    sp = sub.add_parser("exp", help="实验/复现：vram 判级 / new 建工作区 / push·pull 传送 / start·run·probe·sessions·kill 远程执行")
+    sp.add_argument("action", choices=["vram", "new", "push", "pull", "start", "run", "probe", "sessions", "kill"])
+    sp.add_argument("target", nargs="?", help="new: 笔记/arXiv id；push/pull/start/run/probe/sessions/kill: 工作区路径")
     sp.add_argument("--params", type=float, help="vram: 模型参数量（十亿，如 7 表示 7B）")
     sp.add_argument("--dtype", default="fp16", help="vram: 权重精度 fp32/fp16/bf16/fp8/int8/int4")
     sp.add_argument("--ctx", type=int, default=2048, help="vram: 上下文长度")
@@ -565,7 +731,13 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--mine", metavar="实验名", help="new: 建我自己的实验（type:mine，无 setup.md）；target 可选为对标论文")
     sp.add_argument("--draft", action="store_true", help="new: 落 draft_notes/ 而非 experiments/")
     sp.add_argument("--overwrite", action="store_true", help="new: 覆盖已有骨架")
-    sp.add_argument("--dry-run", action="store_true", help="push/pull: 预览传输，不实际改动")
+    sp.add_argument("--dry-run", action="store_true", help="push/pull/start: 预览传输，不实际改动")
+    sp.add_argument("--cmd", help="run: 在远程 tmux 里执行的命令")
+    sp.add_argument("--session", help="run/kill: 远程 tmux 会话名（run 省略用 helix-exp）")
+    sp.add_argument("--oneshot", action="store_true", help="run: 命令跑完自动退会话（如装环境）；省略则保留会话")
+    sp.add_argument("--sudo", action="store_true", help="run: 命令需 sudo（sudo 密码经 stdin 注入，不进 argv）")
+    sp.add_argument("--message", "-m", help="start: 本轮实验的提交信息（省略用默认）")
+    sp.add_argument("--remote-path", help="push/pull/run/start: 确认/指定远程工作区路径（首次需要，写入 sync.yaml）")
     sp.set_defaults(func=cmd_repro)
 
     sp = sub.add_parser("index", help="FTS5 索引：build / search <query>")

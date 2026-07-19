@@ -59,14 +59,24 @@ class Remote:
     host: str = ""                  # ssh target; prefer a ~/.ssh/config alias over a bare IP/password
     remote_repro_root: str = ""     # experiments root on the remote, e.g. /data/helix-experiments
     hardware_profile: str = ""      # name of a hardware_profiles entry this machine physically is
+    user: str = ""                  # ssh user (optional; empty falls back to ~/.ssh/config)
+    ssh_key: str = ""               # optional identity file path (empty = default keys / agent)
 
     def to_dict(self) -> dict:
+        # Non-sensitive only — credentials live in config.secrets.yaml, never here.
         return {
             "name": self.name,
             "host": self.host,
             "remote_repro_root": self.remote_repro_root,
             "hardware_profile": self.hardware_profile,
+            "user": self.user,
+            "ssh_key": self.ssh_key,
         }
+
+    @property
+    def ssh_target(self) -> str:
+        """The ssh destination: user@host when a user is set, else host (alias-friendly)."""
+        return f"{self.user}@{self.host}" if self.user else self.host
 
 
 @dataclass
@@ -229,6 +239,8 @@ def load_config(path: str | None = None) -> Config:
                 host=str(spec.get("host", "") or ""),
                 remote_repro_root=str(spec.get("remote_repro_root", "") or ""),
                 hardware_profile=str(spec.get("hardware_profile", "") or ""),
+                user=str(spec.get("user", "") or ""),
+                ssh_key=str(spec.get("ssh_key", "") or ""),
             )
         )
 

@@ -28,7 +28,11 @@ uv pip install -e .
 
 # 2. 复制配置模板（config.yaml 含 API key，已 gitignore，不进版本控制）
 cp config.example.yaml config.yaml
-# 按需编辑 config.yaml：research_domains、semantic_scholar_api_key、mineru_api_key
+# 按需编辑 config.yaml：research_domains、semantic_scholar_api_key、mineru_api_key、remotes（远程 GPU 机器）
+
+# 2b.（可选）远程跑实验需要 SSH/sudo 密码时，另复制凭据模板（也已 gitignore，绝不进大模型）
+# cp config.secrets.example.yaml config.secrets.yaml   # 优先配 SSH key 免密则无需此文件
+# 用密码登录还需装 sshpass（brew install hudochenkov/sshpass/sshpass 或 apt install sshpass）
 
 # 3. 启用自然语言触发（软链 skills + 规约到各 agent 的发现路径）
 uv run helix init                    # 项目级：本项目目录下的 agent 生效
@@ -108,7 +112,11 @@ uv run helix search "vision language action" --top-n 5   # 检索并打分
 | `helix exp vram --params <B>` | 显存估算 + 对各硬件档判级（装得下/量化/多卡TP/offload） | ✅ |
 | `helix exp new <笔记\|id>` | 建复现工作区骨架（setup+plan+results/+RESULTS_LAYOUT+sync.yaml），`--draft` 落 draft_notes | ✅ |
 | `helix exp new --mine "<实验名>"` | 建我自己的实验工作区（type:mine，无 setup.md，plan.md 即实验设计） | ✅ |
-| `helix exp push/pull <工作区>` | 本地↔远程 GPU 传送带（rsync 封装，`--dry-run` 预览；结果只回流 results/） | ✅ |
+| `helix exp push/pull <工作区>` | 本地↔远程 GPU 传送带（scp 封装，跨平台；首次需 `--remote-path` 确认远程路径；`--dry-run` 预览；结果只回流 results/） | ✅ |
+| `helix exp start <工作区>` | 开始实验：git 提交本轮改动 + push 代码上远程（远程代码=本地某 commit） | ✅ |
+| `helix exp run <工作区> --cmd "..."` | 在远程 tmux 会话里跑命令（`--oneshot` 跑完退会话，`--sudo` 需提权，`--session` 指定会话名） | ✅ |
+| `helix exp probe <工作区>` | 探远程磁盘/GPU 占用（JSON），跑实验前判断条件 | ✅ |
+| `helix exp sessions/kill <工作区>` | 列 / 杀远程 tmux 会话 | ✅ |
 | `helix note score <file> --relevance/--novelty/--reliability <N>` | 把独立评审的三维打分写进笔记 frontmatter | ✅ |
 | `helix review new "<topic>"` | 建文献综述骨架（逐篇打分表 + 综合分析 + 相关文献补充） | ✅ |
 
@@ -124,7 +132,7 @@ agent 负责需要 LLM 的深读与总结：
 - `skills/search/` — 检索路由：本地 FTS vs 跨源检索
 - `skills/deep-read/` — 单篇深读：建骨架 → 读全文填充 → 链接 + 建索引
 - `skills/daily/` — 开启研究日：批量检索 → 推荐笔记 → top-N 深读
-- `skills/reproduce/` — 论文复现规划：抽取实验设置 → 可复现性分级 → 按 GPU 判级适配 → 产出可执行复现方案（借鉴 ref/deepcode 的 Paper2Code）。笔记在本地、实验在远程时，用 `helix exp push/pull` 传方案、回结果（见 [docs/reproduce-sync.md](docs/reproduce-sync.md)）
+- `skills/reproduce/` — 论文复现规划：抽取实验设置 → 可复现性分级 → 按 GPU 判级适配 → 产出可执行复现方案（借鉴 ref/deepcode 的 Paper2Code）。笔记/代码在本地、实验在远程时，agent 用 `helix exp start/run/probe/pull` 在远程 GPU 上编排跑实验（凭据锁在 CLI 不进大模型，见 [docs/reproduce-sync.md](docs/reproduce-sync.md)）
 - `skills/review/` — 文献综述：两条路径（已有笔记汇总 / 方向检索汇总），漏斗式「粗筛→入选精读→综合」，逐篇由独立评审（Codex MCP）打相关性/创新性/可靠性三维分
 
 `helix init` 后即可在对话里自然语言触发，例如直接说「读这篇论文：2503.22020」。

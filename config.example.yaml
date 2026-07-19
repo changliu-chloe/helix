@@ -71,12 +71,14 @@ hardware_profiles:
     interconnect: NVLink
     notes: 单机 8×96G=768G，可 TP8 跑 355B-fp8。
 
-# 远程 GPU 机器册（可选，留空即 exp push/pull 传送带关闭）。
-# 笔记在本地、实验在远程时用：helix exp push/pull 把方案推上去、把结果拉回来。
-# 这里只登记「机器长什么样」；「某个实验推/拉哪些文件」在每个工作区的 sync.yaml 里（贴着实验走）。
-# host 建议用 ~/.ssh/config 里的 alias，别写明文密码（写了会告警）。
+# 远程 GPU 机器册（可选，留空即远程功能关闭）。
+# 笔记/代码在本地、实验在远程时用：helix exp start/run/probe/push/pull 在远程编排跑实验、拉结果。
+# 这里只登记「机器长什么样」（非敏感）；「某个实验推/拉哪些文件」在每个工作区的 sync.yaml 里（贴着实验走）。
+# 凭据（SSH/sudo 密码）不放这里，放 config.secrets.yaml（已 gitignore）；优先用 SSH key 免密则无需密码。
 remotes:
   gpu-a100:
     host: gpu-a100                     # ssh 目标，建议是 ~/.ssh/config 的 alias
+    user: ''                           # ssh 用户，可留空走 ~/.ssh/config
+    ssh_key: ''                        # 可选 identity 文件路径，留空用默认 key / agent
     remote_repro_root: /data/helix-experiments   # 远程实验根目录
     hardware_profile: a100-8x40g       # 这台机对应上面哪个硬件档（复用判级）

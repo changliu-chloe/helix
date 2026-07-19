@@ -437,6 +437,8 @@ RESULTS_LAYOUT = """# 实验结果存放规则（远程 agent 请遵守）
 - results/plots/    图（*.png / *.pdf）
 - results/tables/   表（*.csv / *.md）
 
+写产物前先 `mkdir -p results/{metrics,plots,tables}`——push 只传声明的文件、不建空目录树，
+目录不存在直接写会失败。
 不要把模型权重、checkpoint、完整日志放进 results/——那些留在远程，不回流本地。
 """
 
@@ -451,10 +453,12 @@ def build_sync_yaml(kind: str) -> str:
         push.insert(0, "setup.md")
     spec = {
         "remote": "",  # fill with a name from config.remotes; empty = transport disabled for this workspace
+        "remote_path": "",  # empty = confirm on first push via --remote-path; then reused
         "push": push,
         "pull": ["results/metrics/**", "results/plots/**", "results/tables/**"],
     }
     header = ("# 本实验的传送清单。remote 填 config.yaml remotes 里的机器名。\n"
+              "# remote_path: 远程工作区路径（首次 push 时由你用 --remote-path 确认后写入）。\n"
               "# push: 推到远程的文件（RESULTS_LAYOUT.md 必带，是远程写盘约定）。\n"
               "# pull: 从远程回拉的结果（对齐 RESULTS_LAYOUT.md 的三个子目录）。\n")
     return header + yaml.safe_dump(spec, allow_unicode=True, sort_keys=False, default_flow_style=False)
