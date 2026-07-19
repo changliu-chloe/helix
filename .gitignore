@@ -9,6 +9,14 @@ config.secrets.yaml
 # helix 运行时数据
 .helix/
 notes/
+# 实验/复现工作区（方案、结果、拉回的产物）；用户数据，不进版本控制
+experiments/
+# 旧版工作区根目录名（migrate 后搬到 experiments/），一并忽略
+repro/
+# --draft 落的试跑工作区
+draft_notes/
+# migrate 补 config 字段前的备份
+config.yaml.bak
 
 # helix init 生成的本机软链（含绝对路径，每台机器自行 `helix init` 重建）
 .claude/
