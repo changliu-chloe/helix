@@ -68,9 +68,10 @@ def cmd_migrate(args: argparse.Namespace) -> int:
     todo: list[str] = []
     if report.repro_rename_pending:
         todo.append("发现旧 repro/ 复现目录，新版改用 experiments/。跑 `helix migrate --yes` 搬迁（只搬不删、先校验）")
-    if report.new_config_keys:
-        keys = "、".join(report.new_config_keys)
-        todo.append(f"config.yaml 可新增字段（参考 config.example.yaml）：{keys}")
+    if report.config_fields_written:
+        keys = "、".join(report.config_fields_written)
+        bak = "（已备份 config.yaml.bak）" if report.config_backed_up else ""
+        todo.append(f"已按模板补充 config.yaml 字段，请填值：{keys}{bak}")
     if report.deps_changed:
         todo.append("依赖有更新，请跑：uv sync --extra dev（或用 uv run helix 会自动同步）")
     if report.index_stale_hint:

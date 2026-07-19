@@ -3,12 +3,15 @@
 `git pull` only updates working-tree files; it re-runs no wiring. So newly pulled
 skills aren't symlinked into .claude, new dependencies aren't installed, and new
 config fields go unnoticed. `migrate` is the idempotent, run-anytime step that
-reconciles these. Design: cheap and safe by default — it re-links skills and
-prunes stale links, but only *reports* config/dependency drift rather than
-mutating your config.yaml or venv (those are your call).
+reconciles these. Design: it re-links skills and prunes stale links; for config
+drift it *appends* any missing fields into config.yaml by copying their template
+blocks (comments + name + empty placeholder) verbatim from config.example.yaml,
+after backing up config.yaml -> config.yaml.bak. Append-only: existing lines,
+comments, and layout are never rewritten, and only fields the user actually lacks
+are added (idempotent). Dependency drift is still only reported (that's your call).
 
 Deliberately out of scope for now (add when a real schema change first occurs):
-FTS index schema versioning with auto-rebuild, and storage-layout data migration.
+FTS index schema versioning with auto-rebuild.
 """
 
 from __future__ import annotations
@@ -69,6 +72,52 @@ def _example_top_keys() -> list[str]:
     return list(data.keys()) if isinstance(data, dict) else []
 
 
+def _extract_field_block(example_text: str, key: str) -> str:
+    """Extract a top-level `key:` block from config.example.yaml text, preserving comments + placeholder.
+
+    Text-based (not YAML) on purpose -- yaml.safe_load discards comments, and the whole point is to copy
+    the template's field name + explanatory comments + empty placeholder verbatim. Grabs the contiguous
+    comment lines directly above `key:` plus the key's own value (including indented nested lines), up to
+    the next top-level key / comment-block / EOF. Returns "" if the key isn't found.
+    """
+    lines = example_text.splitlines()
+    # locate the top-level `key:` line (column 0, not indented, not a comment)
+    key_idx = None
+    for i, line in enumerate(lines):
+        stripped = line.lstrip()
+        if line[:1] not in (" ", "\t", "#") and ":" in line and stripped.split(":", 1)[0].strip() == key:
+            key_idx = i
+            break
+    if key_idx is None:
+        return ""
+
+    # walk up over the contiguous comment lines immediately above (stop at a blank line or non-comment)
+    start = key_idx
+    j = key_idx - 1
+    while j >= 0 and lines[j].lstrip().startswith("#"):
+        start = j
+        j -= 1
+
+    # walk down: the key line, then any indented / blank-within-block lines until the next top-level token
+    end = key_idx + 1
+    while end < len(lines):
+        line = lines[end]
+        if line.strip() == "":
+            # a blank line may separate nested content; peek: if next non-blank is indented, keep going
+            k = end + 1
+            while k < len(lines) and lines[k].strip() == "":
+                k += 1
+            if k < len(lines) and lines[k][:1] in (" ", "\t"):
+                end = k + 1
+                continue
+            break
+        if line[:1] in (" ", "\t"):   # indented -> part of this key's nested value
+            end = end + 1
+            continue
+        break                          # hit the next top-level key / comment block
+    return "\n".join(lines[start:end]).rstrip("\n")
+
+
 def _user_top_keys(cfg: Config) -> list[str]:
     """Top-level keys present in the user's actual config.yaml."""
     if not cfg._path or not cfg._path.exists():
@@ -86,7 +135,9 @@ class MigrateReport:
 
     linked: list[str] = field(default_factory=list)          # newly created skill symlinks
     pruned: list[str] = field(default_factory=list)          # stale skill symlinks removed
-    new_config_keys: list[str] = field(default_factory=list)  # example has, user config lacks
+    new_config_keys: list[str] = field(default_factory=list)  # example has, user config lacks (detected)
+    config_fields_written: list[str] = field(default_factory=list)  # fields appended into config.yaml this run
+    config_backed_up: bool = False                            # config.yaml.bak written before appending
     deps_changed: bool = False                                # uv.lock changed since last migrate
     index_stale_hint: bool = False                            # notes newer than index
     repro_rename_pending: bool = False                        # legacy repro/ dir exists, needs move to experiments/
@@ -98,12 +149,52 @@ class MigrateReport:
             "linked": self.linked,
             "pruned": self.pruned,
             "new_config_keys": self.new_config_keys,
+            "config_fields_written": self.config_fields_written,
+            "config_backed_up": self.config_backed_up,
             "deps_changed": self.deps_changed,
             "index_stale_hint": self.index_stale_hint,
             "repro_rename_pending": self.repro_rename_pending,
             "repro_renamed": self.repro_renamed,
             "results_upgraded": self.results_upgraded,
         }
+
+
+# Marker header for the block migrate appends to config.yaml (kept stable so users recognize it).
+_APPEND_MARKER = "# ===== 以下字段由 helix migrate 按模板补充，请填值 ====="
+
+
+def _append_missing_fields(cfg: Config, missing_keys: list[str], report: MigrateReport,
+                           logs: list[str]) -> None:
+    """Append template blocks for missing config keys to the user's config.yaml (backup first, never rewrite).
+
+    Copies each key's block (comments + name + placeholder) verbatim from config.example.yaml, so field
+    names/comments/placement are controlled by the template, not hand-written. Only appends keys the user
+    actually lacks (idempotent). No missing keys -> file untouched, no backup.
+    """
+    if not missing_keys or not cfg._path or not cfg._path.exists() or not EXAMPLE_CONFIG.exists():
+        return
+    example_text = EXAMPLE_CONFIG.read_text(encoding="utf-8")
+    blocks: list[str] = []
+    written: list[str] = []
+    for key in missing_keys:
+        block = _extract_field_block(example_text, key)
+        if block:
+            blocks.append(block)
+            written.append(key)
+    if not written:
+        return
+
+    # backup before touching the file (revertible; aligns with "never lose user data")
+    bak = cfg._path.with_suffix(cfg._path.suffix + ".bak")
+    shutil.copy(cfg._path, bak)
+    report.config_backed_up = True
+
+    existing = cfg._path.read_text(encoding="utf-8")
+    sep = "" if existing.endswith("\n") else "\n"
+    appended = f"{existing}{sep}\n{_APPEND_MARKER}\n" + "\n\n".join(blocks) + "\n"
+    cfg._path.write_text(appended, encoding="utf-8")
+    report.config_fields_written = written
+    logs.append(f"已按模板补充 config 字段（值留空，请填）：{'、'.join(written)}；已备份 {bak.name}")
 
 
 def _index_looks_stale(cfg: Config) -> bool:
@@ -211,10 +302,12 @@ def run_migrate(cfg: Config, scope: str = "project", *, do_move: bool = False) -
         logs.append(line)
         report.pruned.append(line)
 
-    # 2. Config drift — report only, never mutate the user's config.yaml.
+    # 2. Config drift — append missing fields (template blocks) into config.yaml, after backing it up.
+    #    Only appends (never rewrites existing lines), so user comments/layout are preserved.
     example_keys = _example_top_keys()
     user_keys = set(_user_top_keys(cfg))
     report.new_config_keys = [k for k in example_keys if k not in user_keys]
+    _append_missing_fields(cfg, report.new_config_keys, report, logs)
 
     # 3. Dependency drift — compare uv.lock hash against last-recorded; hint, don't install.
     state = _load_state(cfg)

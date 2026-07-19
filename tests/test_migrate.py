@@ -20,16 +20,29 @@ class TestMigrate(unittest.TestCase):
             (d / "SKILL.md").write_text("---\nname: %s\n---\n" % name, encoding="utf-8")
         self.example = self.root / "config.example.yaml"
         self.example.write_text(
-            "language: zh\nnotes_dir: notes\nexperiments_dir: experiments\nnew_field: 1\n", encoding="utf-8"
+            "language: zh\n"
+            "notes_dir: notes\n"
+            "# 实验工作区根目录（与 notes 平级）\n"
+            "experiments_dir: experiments\n"
+            "# 一个带注释的标量新字段\n"
+            "new_field: ''\n"
+            "# 远程 GPU 机器册（嵌套块）\n"
+            "remotes:\n"
+            "  gpu-a100:\n"
+            "    host: gpu-a100\n"
+            "    remote_repro_root: /data/exp\n",
+            encoding="utf-8",
         )
         self.lock = self.root / "uv.lock"
         self.lock.write_text("v1", encoding="utf-8")
         self.claude_md = self.root / "CLAUDE.md"
         self.claude_md.write_text("# conventions\n", encoding="utf-8")
 
-        # user config: has language/notes_dir but NOT repro_dir or new_field
+        # user config: has language/notes_dir (+ a custom comment) but NOT the newer fields
         self.user_cfg_path = self.root / "config.yaml"
-        self.user_cfg_path.write_text("language: zh\nnotes_dir: notes\n", encoding="utf-8")
+        self.user_cfg_path.write_text(
+            "# 我自己加的注释，别动\nlanguage: zh\nnotes_dir: notes\n", encoding="utf-8"
+        )
         self.cfg = Config(notes_dir=str(self.root / "notes"), _path=self.user_cfg_path)
 
         # redirect module-level paths into the temp project
@@ -50,17 +63,17 @@ class TestMigrate(unittest.TestCase):
             p.stop()
         self.tmp.cleanup()
 
-    def test_links_skills_and_reports_new_config_keys(self):
+    def test_links_skills_and_writes_new_config_keys(self):
         report, _ = migrate.run_migrate(self.cfg, scope="project")
         self.assertTrue((self.root / ".claude" / "skills" / "search").is_symlink())
         self.assertTrue((self.root / ".agents" / "skills" / "search").is_symlink())
         self.assertTrue((self.root / "AGENTS.md").is_symlink())
         # 2 skills x 2 dirs + AGENTS.md = 5 new links
         self.assertEqual(len(report.linked), 5)
-        # experiments_dir + new_field are in example but not in user config
-        self.assertIn("experiments_dir", report.new_config_keys)
-        self.assertIn("new_field", report.new_config_keys)
-        self.assertNotIn("language", report.new_config_keys)
+        # experiments_dir + new_field + remotes are in example but not in user config -> appended
+        for k in ("experiments_dir", "new_field", "remotes"):
+            self.assertIn(k, report.config_fields_written)
+        self.assertNotIn("language", report.config_fields_written)
 
     def test_prunes_stale_link(self):
         migrate.run_migrate(self.cfg, scope="project")
@@ -93,6 +106,66 @@ class TestMigrate(unittest.TestCase):
         migrate.run_migrate(self.cfg, scope="project")
         state = self.root / ".helix" / "state.json"
         self.assertTrue(state.exists())
+
+    def test_config_fields_appended_with_comments_and_placeholder(self):
+        migrate.run_migrate(self.cfg, scope="project")
+        text = self.user_cfg_path.read_text(encoding="utf-8")
+        # field names present
+        self.assertIn("experiments_dir: experiments", text)
+        self.assertIn("new_field:", text)
+        # template comments copied verbatim
+        self.assertIn("# 实验工作区根目录（与 notes 平级）", text)
+        self.assertIn("# 一个带注释的标量新字段", text)
+        # nested block copied whole
+        self.assertIn("remotes:", text)
+        self.assertIn("    host: gpu-a100", text)
+        # marker header present
+        self.assertIn("helix migrate 按模板补充", text)
+
+    def test_user_content_preserved(self):
+        original = self.user_cfg_path.read_text(encoding="utf-8")
+        migrate.run_migrate(self.cfg, scope="project")
+        after = self.user_cfg_path.read_text(encoding="utf-8")
+        # append-only: the original text is an exact prefix of the result (comment + lines untouched)
+        self.assertTrue(after.startswith(original))
+        self.assertIn("# 我自己加的注释，别动", after)
+
+    def test_backup_created_equals_original(self):
+        original = self.user_cfg_path.read_text(encoding="utf-8")
+        migrate.run_migrate(self.cfg, scope="project")
+        bak = self.root / "config.yaml.bak"
+        self.assertTrue(bak.exists())
+        self.assertEqual(bak.read_text(encoding="utf-8"), original)
+
+    def test_append_is_idempotent(self):
+        migrate.run_migrate(self.cfg, scope="project")
+        after_first = self.user_cfg_path.read_text(encoding="utf-8")
+        # second run: user now has the fields, nothing more to append
+        report, _ = migrate.run_migrate(self.cfg, scope="project")
+        self.assertEqual(report.config_fields_written, [])
+        self.assertEqual(self.user_cfg_path.read_text(encoding="utf-8"), after_first)
+
+    def test_no_missing_no_write_no_backup(self):
+        # user config already has everything the example does
+        self.user_cfg_path.write_text(
+            "language: zh\nnotes_dir: notes\nexperiments_dir: x\nnew_field: y\nremotes: {}\n",
+            encoding="utf-8",
+        )
+        before = self.user_cfg_path.read_text(encoding="utf-8")
+        report, _ = migrate.run_migrate(self.cfg, scope="project")
+        self.assertEqual(report.config_fields_written, [])
+        self.assertFalse((self.root / "config.yaml.bak").exists())
+        self.assertEqual(self.user_cfg_path.read_text(encoding="utf-8"), before)
+
+    def test_extract_field_block_scalar_and_nested(self):
+        ex = self.example.read_text(encoding="utf-8")
+        scalar = migrate._extract_field_block(ex, "experiments_dir")
+        self.assertIn("# 实验工作区根目录（与 notes 平级）", scalar)
+        self.assertIn("experiments_dir: experiments", scalar)
+        nested = migrate._extract_field_block(ex, "remotes")
+        self.assertIn("remotes:", nested)
+        self.assertIn("    remote_repro_root: /data/exp", nested)
+        self.assertEqual(migrate._extract_field_block(ex, "nonexistent"), "")
 
     def test_repro_move_pending_without_yes(self):
         # legacy repro/ present; without --yes it's only reported, never moved

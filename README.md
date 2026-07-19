@@ -83,7 +83,7 @@ git pull
 uv run helix migrate     # 幂等：重链新 skill、清失效软链，并提示还需手动做什么
 ```
 
-`migrate` **默认不改你的数据**：config 缺哪些新字段只提示（不动你的 `config.yaml`），依赖有变化提示你 `uv sync --extra dev`（不自动装），笔记比索引新提示你 `index build`（不自动重建）。按它列出的「需手动处理」逐条做即可。
+`migrate` 会把 config 缺的新字段**按模板补进你的 `config.yaml`**（连注释、空占位一起追加到末尾；写前先备份 `config.yaml.bak`，只追加不动你现有内容，幂等），你只需填值。依赖有变化提示你 `uv sync --extra dev`（不自动装），笔记比索引新提示你 `index build`（不自动重建）。按它列出的「需手动处理」逐条做即可。
 
 ## 快速开始
 
@@ -99,7 +99,7 @@ uv run helix search "vision language action" --top-n 5   # 检索并打分
 | 命令 | 说明 | 状态 |
 |---|---|---|
 | `helix init` | 软链 skills 到 .claude/skills + .agents/skills、AGENTS.md→CLAUDE.md，启用自然语言触发（首次搭建） | ✅ |
-| `helix migrate` | `git pull` 后追平：重链新 skill（含 .agents / AGENTS.md）、清失效软链、提示 config/依赖/索引更新 | ✅ |
+| `helix migrate` | `git pull` 后追平：重链新 skill（含 .agents / AGENTS.md）、清失效软链、按模板补 config 缺失字段（备份+追加）、提示依赖/索引更新 | ✅ |
 | `helix status` | 配置/库/索引状态 | ✅ |
 | `helix search "<query>"` | 检索 + 4维打分（arxiv/s2/dblp 多源合并去重） | ✅ |
 | `helix note new <id>` | 抓论文生成深读笔记骨架（文件用短名） | ✅ |
