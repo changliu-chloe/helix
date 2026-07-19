@@ -108,7 +108,7 @@ class TestConfigReviewDefaults(unittest.TestCase):
             self.assertEqual(cfg.review_subdir, "reviews")
             self.assertEqual(cfg.reviewer_model, "gpt-5.6-sol")
             self.assertEqual(cfg.review_funnel_top_n, 10)
-            self.assertEqual(cfg.review_path, root / "notes" / "reviews")
+            self.assertEqual(cfg.review_path, root / "workspace" / "notes" / "reviews")
 
 
 if __name__ == "__main__":

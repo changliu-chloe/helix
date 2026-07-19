@@ -104,7 +104,7 @@ class TestMigrate(unittest.TestCase):
 
     def test_state_file_written(self):
         migrate.run_migrate(self.cfg, scope="project")
-        state = self.root / ".helix" / "state.json"
+        state = self.root / "workspace" / ".helix" / "state.json"  # index/state now under workspace/
         self.assertTrue(state.exists())
 
     def test_config_fields_appended_with_comments_and_placeholder(self):
@@ -186,26 +186,72 @@ class TestMigrate(unittest.TestCase):
         report, _ = migrate.run_migrate(self.cfg, scope="project", do_move=True)
         self.assertTrue(report.repro_renamed)
         self.assertFalse((self.root / "repro").exists())         # source removed after verify
-        moved = self.root / "experiments" / "domX" / "paperY"
+        # legacy repro/ (at base) moves to experiments_path, which now lives under workspace/
+        moved = self.root / "workspace" / "experiments" / "domX" / "paperY"
         self.assertTrue((moved / "plan.md").exists())
         self.assertTrue((moved / "setup.md").exists())           # nothing lost
 
     def test_repro_move_skips_when_target_exists(self):
         (self.root / "repro" / "d").mkdir(parents=True)
         (self.root / "repro" / "d" / "plan.md").write_text("x", encoding="utf-8")
-        (self.root / "experiments").mkdir()                      # target already there
+        (self.root / "workspace" / "experiments").mkdir(parents=True)  # target already there
         report, _ = migrate.run_migrate(self.cfg, scope="project", do_move=True)
         self.assertFalse(report.repro_renamed)                   # refuses to merge/overwrite
         self.assertTrue((self.root / "repro").exists())          # source preserved
 
     def test_results_md_upgraded_to_index(self):
-        ws = self.root / "experiments" / "d" / "p"
+        ws = self.root / "workspace" / "experiments" / "d" / "p"  # experiments live under workspace/
         ws.mkdir(parents=True)
         (ws / "results.md").write_text("old results", encoding="utf-8")
         report, _ = migrate.run_migrate(self.cfg, scope="project")
         self.assertFalse((ws / "results.md").exists())
         self.assertEqual((ws / "results" / "index.md").read_text(encoding="utf-8"), "old results")
         self.assertTrue(report.results_upgraded)
+
+    def test_workspace_migrate_pending_without_yes(self):
+        # old layout: notes/ + experiments/ at base_dir, not under workspace/
+        (self.root / "notes" / "papers").mkdir(parents=True)
+        (self.root / "notes" / "papers" / "a.md").write_text("note", encoding="utf-8")
+        (self.root / "experiments" / "d").mkdir(parents=True)
+        report, _ = migrate.run_migrate(self.cfg, scope="project", do_move=False)
+        self.assertTrue(report.workspace_migrate_pending)
+        self.assertFalse(report.workspace_migrated)
+        self.assertTrue((self.root / "notes").exists())          # untouched without --yes
+        self.assertFalse((self.root / "workspace" / "notes").exists())
+
+    def test_workspace_migrate_moves_and_preserves(self):
+        self.cfg.notes_dir = "notes"   # relative -> should be moved under workspace/ (setUp uses absolute)
+        (self.root / "notes" / "papers").mkdir(parents=True)
+        (self.root / "notes" / "papers" / "a.md").write_text("note", encoding="utf-8")
+        (self.root / "experiments" / "d").mkdir(parents=True)
+        (self.root / "experiments" / "d" / "plan.md").write_text("plan", encoding="utf-8")
+        report, _ = migrate.run_migrate(self.cfg, scope="project", do_move=True)
+        self.assertIn("notes", report.workspace_migrated)
+        self.assertIn("experiments", report.workspace_migrated)
+        # sources gone, data preserved under workspace/
+        self.assertFalse((self.root / "notes").exists())
+        self.assertFalse((self.root / "experiments").exists())
+        self.assertTrue((self.root / "workspace" / "notes" / "papers" / "a.md").exists())
+        self.assertTrue((self.root / "workspace" / "experiments" / "d" / "plan.md").exists())
+
+    def test_workspace_migrate_idempotent(self):
+        (self.root / "experiments" / "d").mkdir(parents=True)
+        (self.root / "experiments" / "d" / "plan.md").write_text("plan", encoding="utf-8")
+        migrate.run_migrate(self.cfg, scope="project", do_move=True)
+        report, _ = migrate.run_migrate(self.cfg, scope="project", do_move=True)
+        self.assertEqual(report.workspace_migrated, [])          # nothing left to move
+        self.assertFalse(report.workspace_migrate_pending)
+
+    def test_absolute_notes_dir_not_moved(self):
+        # notes_dir points at an external absolute path -> notes stays external, only experiments moves
+        ext = self.root / "external_vault"
+        (ext / "papers").mkdir(parents=True)
+        (ext / "papers" / "a.md").write_text("note", encoding="utf-8")
+        self.cfg.notes_dir = str(ext)
+        (self.root / "experiments" / "d").mkdir(parents=True)
+        report, _ = migrate.run_migrate(self.cfg, scope="project", do_move=True)
+        self.assertNotIn("notes", report.workspace_migrated)     # external vault untouched
+        self.assertTrue((ext / "papers" / "a.md").exists())
 
 
 if __name__ == "__main__":

@@ -34,8 +34,8 @@ LOCK_FILE = PROJECT_ROOT / "uv.lock"
 
 
 def _state_path(cfg: Config) -> Path:
-    """Migration state lives next to the index, under .helix/ (git-ignored, per-checkout)."""
-    return cfg.base_dir / ".helix" / "state.json"
+    """Migration state lives next to the index, under workspace/.helix/ (git-ignored, per-checkout)."""
+    return cfg.index_path.parent / "state.json"
 
 
 def _load_state(cfg: Config) -> dict:
@@ -143,6 +143,8 @@ class MigrateReport:
     repro_rename_pending: bool = False                        # legacy repro/ dir exists, needs move to experiments/
     repro_renamed: bool = False                               # repro/ -> experiments/ was performed this run
     results_upgraded: list[str] = field(default_factory=list)  # workspaces whose results.md -> results/index.md
+    workspace_migrate_pending: bool = False                   # data dirs sit outside workspace/, need move
+    workspace_migrated: list[str] = field(default_factory=list)  # dirs moved under workspace/ this run
 
     def to_dict(self) -> dict:
         return {
@@ -156,6 +158,8 @@ class MigrateReport:
             "repro_rename_pending": self.repro_rename_pending,
             "repro_renamed": self.repro_renamed,
             "results_upgraded": self.results_upgraded,
+            "workspace_migrate_pending": self.workspace_migrate_pending,
+            "workspace_migrated": self.workspace_migrated,
         }
 
 
@@ -277,11 +281,68 @@ def _upgrade_results_files(cfg: Config, report: MigrateReport, logs: list[str]) 
         logs.append(f"结果升级：{rel}/results.md → results/index.md")
 
 
+def _move_into_workspace(src: Path, dst: Path, label: str, report: MigrateReport, logs: list[str]) -> None:
+    """Copy src -> dst, verify file count, then delete src. Only-move-never-lose (same as repro migration)."""
+    if dst.exists():
+        logs.append(f"跳过搬迁：目标 {dst} 已存在，为避免覆盖不自动合并。请手动核对 {src} 与 {dst}")
+        report.workspace_migrate_pending = True
+        return
+    before = _count_files(src)
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(src, dst)
+    after = _count_files(dst)
+    if after < before:
+        logs.append(f"搬迁校验未通过（{label}：源 {before} 文件，目标 {after}），已保留原 {src} 不删")
+        report.workspace_migrate_pending = True
+        return
+    shutil.rmtree(src)
+    report.workspace_migrated.append(label)
+    logs.append(f"已搬迁 {label}：{src} → {dst}（{after} 文件，已核对；旧目录已清理）")
+
+
+def _migrate_to_workspace(cfg: Config, report: MigrateReport, logs: list[str], do_move: bool) -> None:
+    """Move legacy top-level data dirs (notes/experiments/.helix/draft_notes) under workspace/.
+
+    Storage-layout change (CLAUDE.md): only-move-never-lose, idempotent, --yes gated. A notes_dir that is
+    an absolute path (external Obsidian vault) is left in place. Targets already inside workspace/ are skipped.
+    """
+    ws = cfg.workspace_path
+    base = cfg.base_dir
+    # (legacy source under base_dir, target under workspace, label). notes only if notes_dir is relative.
+    candidates: list[tuple[Path, Path, str]] = []
+    if not Path(cfg.notes_dir).expanduser().is_absolute():
+        candidates.append((base / cfg.notes_dir, ws / cfg.notes_dir, "notes"))
+    if not Path(cfg.experiments_dir).expanduser().is_absolute():
+        candidates.append((base / cfg.experiments_dir, ws / cfg.experiments_dir, "experiments"))
+    candidates.append((base / ".helix", ws / ".helix", ".helix"))
+    candidates.append((base / "draft_notes", ws / "draft_notes", "draft_notes"))
+
+    pending: list[tuple[Path, Path, str]] = []
+    for src, dst, label in candidates:
+        # skip if source doesn't exist, or already resolves inside workspace (nothing to move)
+        if not src.exists() or not src.is_dir():
+            continue
+        if src.resolve() == dst.resolve():
+            continue
+        pending.append((src, dst, label))
+
+    if not pending:
+        return
+    if not do_move:
+        names = "、".join(label for _, _, label in pending)
+        report.workspace_migrate_pending = True
+        logs.append(f"待迁移：{names} 还在 workspace/ 外。跑 `helix migrate --yes` 搬进 "
+                    f"{ws.name}/（只搬不删，先校验后核对）")
+        return
+    for src, dst, label in pending:
+        _move_into_workspace(src, dst, label, report, logs)
+
+
 def run_migrate(cfg: Config, scope: str = "project", *, do_move: bool = False) -> tuple[MigrateReport, list[str]]:
     """Reconcile a pulled checkout. Idempotent and non-destructive by default.
 
-    do_move=True (helix migrate --yes) performs the repro/ -> experiments/ storage move; otherwise it's
-    only reported as pending. Returns (report, log lines). The caller (cli) prints the log and a summary.
+    do_move=True (helix migrate --yes) performs storage moves (data dirs -> workspace/, repro/ -> experiments/);
+    otherwise they're only reported as pending. Returns (report, log lines); the cli prints log + summary.
     """
     logs: list[str] = []
     report = MigrateReport()
@@ -319,10 +380,11 @@ def run_migrate(cfg: Config, scope: str = "project", *, do_move: bool = False) -
     # 4. Index staleness — hint only.
     report.index_stale_hint = _index_looks_stale(cfg)
 
-    # 5. Storage-layout migration: legacy repro/ -> experiments/ (only with --yes), then upgrade
-    #    any single-file results.md -> results/index.md. Only-move-never-lose (see helpers).
-    _migrate_repro_dir(cfg, report, logs, do_move)
-    _upgrade_results_files(cfg, report, logs)
+    # 5. Storage-layout migration (only-move-never-lose, --yes gated). Order matters:
+    #    (a) move top-level data dirs under workspace/ first, so (b)/(c) operate on the new location.
+    _migrate_to_workspace(cfg, report, logs, do_move)
+    _migrate_repro_dir(cfg, report, logs, do_move)      # legacy repro/ -> experiments/ (now under workspace)
+    _upgrade_results_files(cfg, report, logs)           # results.md -> results/index.md
 
     # Persist state (record current lock hash so the next migrate can detect changes).
     state["lock_hash"] = lock_hash

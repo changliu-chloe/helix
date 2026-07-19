@@ -82,6 +82,7 @@ class Remote:
 @dataclass
 class Config:
     language: str = "zh"
+    workspace_dir: str = "workspace"
     notes_dir: str = "notes"
     papers_subdir: str = "papers"
     daily_subdir: str = "daily"
@@ -121,9 +122,20 @@ class Config:
         path = Path(p).expanduser()
         return path if path.is_absolute() else self.base_dir / path
 
+    def _resolve_under_workspace(self, p: str) -> Path:
+        """Resolve a data path: absolute as-is (e.g. external Obsidian vault), relative under workspace_path."""
+        path = Path(p).expanduser()
+        return path if path.is_absolute() else self.workspace_path / path
+
+    @property
+    def workspace_path(self) -> Path:
+        """Single root for all local data (notes + experiments + index), anchored to base_dir."""
+        return self._resolve(self.workspace_dir)
+
     @property
     def notes_path(self) -> Path:
-        return self._resolve(self.notes_dir)
+        # relative notes_dir lives under workspace/; an absolute notes_dir (Obsidian vault) stays external
+        return self._resolve_under_workspace(self.notes_dir)
 
     @property
     def papers_path(self) -> Path:
@@ -140,8 +152,8 @@ class Config:
 
     @property
     def experiments_path(self) -> Path:
-        """Experiments workspace root (reproduction + my own experiments), a sibling of notes_path, anchored to base_dir."""
-        return self._resolve(self.experiments_dir)
+        """Experiments root (reproduction + my own experiments), under workspace/ (absolute stays external)."""
+        return self._resolve_under_workspace(self.experiments_dir)
 
     def experiment_workspace_path(self, domain: str, short_name: str, draft: bool = False) -> Path:
         """Experiment workspace for one paper/experiment: experiments/<domain>/<short_name>/ (goes to draft_notes/ when --draft)."""
@@ -150,7 +162,7 @@ class Config:
         def _safe(s: str, fallback: str) -> str:
             return _re.sub(r'[ /\\:*?"<>|]+', "_", s or fallback).strip("_") or fallback
 
-        root = self._resolve("draft_notes") if draft else self.experiments_path
+        root = (self.workspace_path / "draft_notes") if draft else self.experiments_path
         return root / _safe(domain, "未分类") / _safe(short_name, "untitled")
 
     def find_profile(self, name: str) -> HardwareProfile | None:
@@ -167,8 +179,8 @@ class Config:
 
     @property
     def index_path(self) -> Path:
-        """FTS5 index location, at .helix/index.db under base_dir."""
-        return self.base_dir / ".helix" / "index.db"
+        """FTS5 index location, at .helix/index.db under workspace/."""
+        return self.workspace_path / ".helix" / "index.db"
 
     def all_categories(self) -> list[str]:
         """Deduplicated arXiv categories across all domains."""
@@ -250,6 +262,7 @@ def load_config(path: str | None = None) -> Config:
 
     return Config(
         language=raw.get("language", "zh"),
+        workspace_dir=raw.get("workspace_dir", "workspace") or "workspace",
         notes_dir=raw.get("notes_dir", "notes"),
         papers_subdir=raw.get("papers_subdir", "papers"),
         daily_subdir=raw.get("daily_subdir", "daily"),

@@ -6,17 +6,16 @@ config.yaml
 # 远程 SSH/sudo 凭据；只由 helix CLI 读取注入，绝不进大模型。用 config.secrets.example.yaml 作模板
 config.secrets.yaml
 
-# helix 运行时数据
-.helix/
-notes/
-# 实验/复现工作区（方案、结果、拉回的产物）；用户数据，不进版本控制
-experiments/
-# 旧版工作区根目录名（migrate 后搬到 experiments/），一并忽略
-repro/
-# --draft 落的试跑工作区
-draft_notes/
+# helix 全部本地数据的根（笔记/复现/实验/索引都在其下）；一处兜住，不进版本控制
+workspace/
 # migrate 补 config 字段前的备份
 config.yaml.bak
+# 旧布局残留（migrate 前的顶层目录；helix migrate --yes 搬进 workspace/ 后可删这几行）
+.helix/
+notes/
+experiments/
+repro/
+draft_notes/
 
 # helix init 生成的本机软链（含绝对路径，每台机器自行 `helix init` 重建）
 .claude/

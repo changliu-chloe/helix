@@ -36,8 +36,10 @@
 复现别人的论文、和我自己的实验，结构高度同构（都要方案、都要跑、都要落结果），没必要两套命令两棵树。
 统一到 `experiments/`，靠 frontmatter 的 `type` 区分：
 
+（实验工作区在 `workspace/experiments/` 下，与 `workspace/notes/` 同属单一 workspace 根）
+
 ```
-experiments/<方向>/<短名>/
+workspace/experiments/<方向>/<短名>/
   setup.md              # 原文实验设置（仅 type:repro 有；type:mine 无原文可抄）
   plan.md               # type:repro=本机复现方案；type:mine=我的实验设计
   sync.yaml             # 声明用哪台远程 + push/pull 清单
@@ -208,9 +210,12 @@ include/exclude 和 `--dry-run`，护栏改这样落地（等价）：
 
 `helix migrate` 增补：
 
-- 检测旧 `repro/` 存在 → 提示（或 `--yes` 执行）整体移到 `experiments/`；移前校验、移后核对文件数，
-  **绝不静默删**。
-- config 旧 `repro_dir` 字段仍能读，映射到新 `experiments_dir`；缺 `experiments_dir` 给默认值 `experiments` 并提示。
+- **统一 workspace 根**：检测 `notes/`、`experiments/`、`.helix/`、`draft_notes/` 还散在 workspace/ 外 →
+  提示（或 `--yes` 执行）搬进 `workspace/`；每个目录 copytree→核对文件数→才删源，**绝不静默删**。
+  `notes_dir` 为绝对路径（外部 Obsidian vault）则跳过、留在外部。
+- 检测旧 `repro/` 存在 → 提示（或 `--yes` 执行）整体移到 `experiments/`（现位于 workspace 下）；同样先校验后核对。
+- config 旧 `repro_dir` 字段仍能读，映射到新 `experiments_dir`；缺 `workspace_dir`/`experiments_dir` 给默认值并
+  按模板补进 config.yaml（承接「migrate 按模板补 config 字段」）。
 - 给已有工作区补 `results/index.md` / `sync.yaml` / `RESULTS_LAYOUT.md`（幂等，已存在跳过）；
   旧的单文件 `results.md`（若有）迁成 `results/index.md`。
 

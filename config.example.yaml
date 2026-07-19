@@ -4,12 +4,15 @@
 # 检索与打分完全由本文件驱动。修改这里即可调整关注方向。
 
 language: zh                 # zh | en，影响笔记语言
-notes_dir: notes             # 笔记库根目录（可改为你的 Obsidian vault 路径）
+# 所有本地数据的根目录：笔记/复现/实验/索引都落在它下面。只需 gitignore 这一个目录。
+# 相对路径锚定到 config.yaml 所在目录；旧版数据散在顶层时跑 `helix migrate --yes` 搬进来。
+workspace_dir: workspace
+notes_dir: notes             # 笔记库（相对 workspace_dir）；填绝对路径可指向外部 Obsidian vault（则留在外部不搬）
 papers_subdir: papers        # 单篇深读笔记子目录（相对 notes_dir）
 daily_subdir: daily          # 每日推荐笔记子目录（相对 notes_dir）
 review_subdir: reviews       # 文献综述笔记子目录（相对 notes_dir）
-experiments_dir: experiments # 实验工作区根目录（复现别人 + 我自己的实验，与 notes_dir 平级）
-                             # 旧版叫 repro_dir，仍能读；跑 `helix migrate --yes` 搬迁到 experiments/
+experiments_dir: experiments # 实验工作区（复现别人 + 我自己的实验，相对 workspace_dir）
+                             # 旧版叫 repro_dir，仍能读；跑 `helix migrate --yes` 搬迁
 
 # 文献综述 / 独立评审打分（见 skills/review、skills/deep-read）
 # reviewer_model：经 Codex MCP 调用的独立评审模型，给论文打三维分（相关性/创新性/可靠性）。

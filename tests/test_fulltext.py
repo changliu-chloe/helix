@@ -128,7 +128,7 @@ class TestAssetsPath(unittest.TestCase):
     def test_assets_path_structure(self):
         cfg = Config(notes_dir="notes", papers_subdir="papers", _path=Path("/proj/config.yaml"))
         p = cfg.assets_path("VLA模型", "2503.22020")
-        self.assertEqual(str(p), "/proj/notes/papers/VLA模型/assets/2503.22020")
+        self.assertEqual(str(p), "/proj/workspace/notes/papers/VLA模型/assets/2503.22020")
 
     def test_mineru_key_env_fallback(self):
         cfg = Config(mineru_api_key="")

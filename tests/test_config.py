@@ -10,13 +10,21 @@ from helix.config import Config, load_config
 
 
 class TestBaseDirAnchor(unittest.TestCase):
-    def test_relative_anchored_to_config_dir(self):
-        cfg = Config(notes_dir="notes", _path=Path("/proj/config.yaml"))
+    def test_relative_anchored_under_workspace(self):
+        # relative data dirs now resolve under workspace/ (single root), not directly under base_dir
+        cfg = Config(notes_dir="notes", experiments_dir="experiments", _path=Path("/proj/config.yaml"))
         self.assertEqual(cfg.base_dir, Path("/proj"))
-        self.assertEqual(cfg.notes_path, Path("/proj/notes"))
-        self.assertEqual(cfg.index_path, Path("/proj/.helix/index.db"))
+        self.assertEqual(cfg.workspace_path, Path("/proj/workspace"))
+        self.assertEqual(cfg.notes_path, Path("/proj/workspace/notes"))
+        self.assertEqual(cfg.experiments_path, Path("/proj/workspace/experiments"))
+        self.assertEqual(cfg.index_path, Path("/proj/workspace/.helix/index.db"))
 
-    def test_absolute_notes_dir_preserved(self):
+    def test_custom_workspace_dir(self):
+        cfg = Config(workspace_dir="ws", notes_dir="notes", _path=Path("/proj/config.yaml"))
+        self.assertEqual(cfg.notes_path, Path("/proj/ws/notes"))
+
+    def test_absolute_notes_dir_stays_external(self):
+        # an absolute notes_dir (Obsidian vault) is NOT pulled under workspace/
         cfg = Config(notes_dir="/data/vault", _path=Path("/proj/config.yaml"))
         self.assertEqual(cfg.notes_path, Path("/data/vault"))
 
@@ -50,7 +58,7 @@ class TestLoadConfigSetsPath(unittest.TestCase):
             root = Path(tmp).resolve()
             (root / "config.yaml").write_text("notes_dir: notes\n", encoding="utf-8")
             cfg = load_config(str(root / "config.yaml"))
-            self.assertEqual(cfg.notes_path, root / "notes")
+            self.assertEqual(cfg.notes_path, root / "workspace" / "notes")
 
 
 if __name__ == "__main__":
