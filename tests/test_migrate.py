@@ -107,6 +107,22 @@ class TestMigrate(unittest.TestCase):
         state = self.root / ".helix" / "state.json"  # runtime data stays at base_dir, not workspace/
         self.assertTrue(state.exists())
 
+    def test_deprecated_key_renamed_in_place_keeps_value(self):
+        # user config with the OLD key repro_dir + a custom value -> renamed to experiments_dir, value kept,
+        # old name gone, NOT re-appended at the end (no duplicate).
+        self.user_cfg_path.write_text(
+            "# 我自己加的注释，别动\nlanguage: zh\nrepro_dir: my_repro_dir\n", encoding="utf-8"
+        )
+        report, _ = migrate.run_migrate(self.cfg, scope="project")
+        text = self.user_cfg_path.read_text(encoding="utf-8")
+        self.assertIn("experiments_dir: my_repro_dir", text)   # renamed, value preserved
+        # old key line gone (check the key token, not the substring — the value contains "repro_dir")
+        self.assertNotIn("\nrepro_dir:", "\n" + text)
+        self.assertEqual(text.count("experiments_dir:"), 1)     # no duplicate (not re-appended)
+        self.assertIn("experiments_dir", report.config_keys_renamed)
+        self.assertNotIn("experiments_dir", report.config_fields_written)
+        self.assertIn("# 我自己加的注释，别动", text)             # user comment untouched
+
     def test_config_fields_appended_with_comments_and_placeholder(self):
         migrate.run_migrate(self.cfg, scope="project")
         text = self.user_cfg_path.read_text(encoding="utf-8")

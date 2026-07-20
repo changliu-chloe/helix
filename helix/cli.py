@@ -72,6 +72,8 @@ def cmd_migrate(args: argparse.Namespace) -> int:
         _err(f"已搬进 workspace/：{'、'.join(report.workspace_migrated)}")
     if report.repro_rename_pending:
         todo.append("发现旧 repro/ 复现目录，新版改用 experiments/。跑 `helix migrate --yes` 搬迁（只搬不删、先校验）")
+    if report.config_keys_renamed:
+        _err(f"已改名 config.yaml 字段（保留原值、删旧名）：{'、'.join(report.config_keys_renamed)}")
     if report.config_fields_written:
         keys = "、".join(report.config_fields_written)
         bak = "（已备份 config.yaml.bak）" if report.config_backed_up else ""

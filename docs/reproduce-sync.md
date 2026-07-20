@@ -215,8 +215,9 @@ include/exclude 和 `--dry-run`，护栏改这样落地（等价）：
   `notes_dir` 为绝对路径（外部 Obsidian vault）则跳过、留在外部。`.helix/`（索引/缓存，运行时可重建）
   留在项目根、不搬。
 - 检测旧 `repro/` 存在 → 提示（或 `--yes` 执行）整体移到 `experiments/`（现位于 workspace 下）；同样先校验后核对。
-- config 旧 `repro_dir` 字段仍能读，映射到新 `experiments_dir`；缺 `workspace_dir`/`experiments_dir` 给默认值并
-  按模板补进 config.yaml（承接「migrate 按模板补 config 字段」）。
+- config 字段改名：migrate 把旧 `repro_dir` 在 config.yaml 里原地改成 `experiments_dir`（保留用户的值、
+  删旧名，不留双 key）；loader 不再读旧字段（开发阶段，抹旧留新）。缺 `workspace_dir` 等字段按模板补进
+  config.yaml（承接「migrate 按模板补 config 字段」）。改名/补字段前均备份 `config.yaml.bak`。
 - 给已有工作区补 `results/index.md` / `sync.yaml` / `RESULTS_LAYOUT.md`（幂等，已存在跳过）；
   旧的单文件 `results.md`（若有）迁成 `results/index.md`。
 
@@ -224,7 +225,7 @@ include/exclude 和 `--dry-run`，护栏改这样落地（等价）：
 
 ## 7. 分期
 
-1. **重命名 + type**：`repro_dir`→`experiments_dir`（向后兼容读旧字段）、`exp` 子命令组、
+1. **重命名 + type**：`repro_dir`→`experiments_dir`（migrate 原地改名、不留旧字段）、`exp` 子命令组、
    `results/index.md` 骨架 + `type` frontmatter、`RESULTS_LAYOUT.md` 骨架、migrate 搬 `repro/`→`experiments/`。
 2. **传送带**：`remotes` config、`sync.yaml`、`exp push/pull`（scp 封装 + 护栏 + `--dry-run`，push 必带 RESULTS_LAYOUT.md）。
 3. **回流落笔记**：reproduce skill 读 `results/{metrics,plots,tables}/` 蒸馏进 `results/index.md`，

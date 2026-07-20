@@ -256,9 +256,10 @@ def load_config(path: str | None = None) -> Config:
             )
         )
 
-    # experiments_dir renamed from the legacy repro_dir; read the new key first, fall back to the old
-    # one so pre-existing config.yaml keeps working (helix migrate prompts the rename).
-    experiments_dir = raw.get("experiments_dir") or raw.get("repro_dir") or "experiments"
+    # experiments_dir is the current key (renamed from the old repro_dir). No legacy fallback: this is a
+    # dev-stage project — `helix migrate` rewrites repro_dir -> experiments_dir in config.yaml, keeping
+    # only the new name. Clean over backward-compatible.
+    experiments_dir = raw.get("experiments_dir") or "experiments"
 
     return Config(
         language=raw.get("language", "zh"),

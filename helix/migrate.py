@@ -137,6 +137,7 @@ class MigrateReport:
     pruned: list[str] = field(default_factory=list)          # stale skill symlinks removed
     new_config_keys: list[str] = field(default_factory=list)  # example has, user config lacks (detected)
     config_fields_written: list[str] = field(default_factory=list)  # fields appended into config.yaml this run
+    config_keys_renamed: list[str] = field(default_factory=list)  # deprecated keys renamed (new names) this run
     config_backed_up: bool = False                            # config.yaml.bak written before appending
     deps_changed: bool = False                                # uv.lock changed since last migrate
     index_stale_hint: bool = False                            # notes newer than index
@@ -152,6 +153,7 @@ class MigrateReport:
             "pruned": self.pruned,
             "new_config_keys": self.new_config_keys,
             "config_fields_written": self.config_fields_written,
+            "config_keys_renamed": self.config_keys_renamed,
             "config_backed_up": self.config_backed_up,
             "deps_changed": self.deps_changed,
             "index_stale_hint": self.index_stale_hint,
@@ -165,6 +167,46 @@ class MigrateReport:
 
 # Marker header for the block migrate appends to config.yaml (kept stable so users recognize it).
 _APPEND_MARKER = "# ===== 以下字段由 helix migrate 按模板补充，请填值 ====="
+
+# Deprecated top-level keys renamed to a new name. migrate rewrites `old: <val>` -> `new: <val>` in
+# config.yaml, keeping the user's value and dropping the old name (dev-stage: clean, no dual keys).
+RENAMED_KEYS = {"repro_dir": "experiments_dir"}
+
+
+def _rename_deprecated_keys(cfg: Config, report: MigrateReport, logs: list[str]) -> list[str]:
+    """Rename deprecated top-level keys in config.yaml in place: `old: <val>` -> `new: <val>`.
+
+    Line-level edit: keeps the user's value and every other line/comment untouched, only swaps the key
+    token. Backs up config.yaml.bak before the first mutation. Returns the list of NEW key names now
+    present (so the caller won't re-append them as "missing").
+    """
+    if not cfg._path or not cfg._path.exists():
+        return []
+    lines = cfg._path.read_text(encoding="utf-8").splitlines(keepends=True)
+    renamed_to: list[str] = []
+    changed = False
+    for i, line in enumerate(lines):
+        # only top-level keys (column 0, not indented, not a comment)
+        if line[:1] in (" ", "\t", "#") or ":" not in line:
+            continue
+        key = line.split(":", 1)[0].strip()
+        new = RENAMED_KEYS.get(key)
+        if new:
+            lines[i] = line.replace(f"{key}:", f"{new}:", 1)  # swap key token, keep value + trailing text
+            renamed_to.append(new)
+            changed = True
+    if not changed:
+        return []
+    if not report.config_backed_up:
+        bak = cfg._path.with_suffix(cfg._path.suffix + ".bak")
+        shutil.copy(cfg._path, bak)
+        report.config_backed_up = True
+    cfg._path.write_text("".join(lines), encoding="utf-8")
+    report.config_keys_renamed = renamed_to
+    for old, new in RENAMED_KEYS.items():
+        if new in renamed_to:
+            logs.append(f"已改名 config 字段：{old} → {new}（保留原值，删除旧名）")
+    return renamed_to
 
 
 def _append_missing_fields(cfg: Config, missing_keys: list[str], report: MigrateReport,
@@ -366,10 +408,12 @@ def run_migrate(cfg: Config, scope: str = "project", *, do_move: bool = False) -
         logs.append(line)
         report.pruned.append(line)
 
-    # 2. Config drift — append missing fields (template blocks) into config.yaml, after backing it up.
-    #    Only appends (never rewrites existing lines), so user comments/layout are preserved.
+    # 2. Config drift. First rename deprecated keys in place (repro_dir -> experiments_dir, keeping the
+    #    user's value + dropping the old name), so the renamed key isn't then re-appended as "missing".
+    #    Then append any still-missing fields from the template. Both back up config.yaml.bak first.
+    renamed = _rename_deprecated_keys(cfg, report, logs)
     example_keys = _example_top_keys()
-    user_keys = set(_user_top_keys(cfg))
+    user_keys = set(_user_top_keys(cfg)) | set(renamed)
     report.new_config_keys = [k for k in example_keys if k not in user_keys]
     _append_missing_fields(cfg, report.new_config_keys, report, logs)
 

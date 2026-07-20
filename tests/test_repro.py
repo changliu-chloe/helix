@@ -179,13 +179,14 @@ class TestConfigHardwareProfiles(unittest.TestCase):
             self.assertEqual(cfg.hardware_profiles, [])
             self.assertEqual(cfg.experiments_dir, "experiments")  # default value
 
-    def test_legacy_repro_dir_still_read(self):
-        # backward compat: an old config.yaml with repro_dir maps onto experiments_dir
+    def test_legacy_repro_dir_not_read(self):
+        # dev-stage: no backward-compat fallback. A stale repro_dir is ignored by the loader (defaults to
+        # experiments); `helix migrate` is what rewrites repro_dir -> experiments_dir in the file.
         with tempfile.TemporaryDirectory() as d:
             cfg_path = Path(d) / "config.yaml"
             cfg_path.write_text("repro_dir: repro\n", encoding="utf-8")
             cfg = load_config(str(cfg_path))
-            self.assertEqual(cfg.experiments_dir, "repro")
+            self.assertEqual(cfg.experiments_dir, "experiments")
 
     def test_parse_remotes(self):
         with tempfile.TemporaryDirectory() as d:

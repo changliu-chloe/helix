@@ -12,7 +12,7 @@ papers_subdir: papers        # 单篇深读笔记子目录（相对 notes_dir）
 daily_subdir: daily          # 每日推荐笔记子目录（相对 notes_dir）
 review_subdir: reviews       # 文献综述笔记子目录（相对 notes_dir）
 experiments_dir: experiments # 实验工作区（复现别人 + 我自己的实验，相对 workspace_dir）
-                             # 旧版叫 repro_dir，仍能读；跑 `helix migrate --yes` 搬迁
+                             # 旧版叫 repro_dir；跑 `helix migrate` 会自动改名为 experiments_dir（保留你的值）
 
 # 文献综述 / 独立评审打分（见 skills/review、skills/deep-read）
 # reviewer_model：经 Codex MCP 调用的独立评审模型，给论文打三维分（相关性/创新性/可靠性）。
