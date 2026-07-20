@@ -210,9 +210,10 @@ include/exclude 和 `--dry-run`，护栏改这样落地（等价）：
 
 `helix migrate` 增补：
 
-- **统一 workspace 根**：检测 `notes/`、`experiments/`、`.helix/`、`draft_notes/` 还散在 workspace/ 外 →
+- **统一 workspace 根**：检测用户数据 `notes/`、`experiments/`、`draft_notes/` 还散在 workspace/ 外 →
   提示（或 `--yes` 执行）搬进 `workspace/`；每个目录 copytree→核对文件数→才删源，**绝不静默删**。
-  `notes_dir` 为绝对路径（外部 Obsidian vault）则跳过、留在外部。
+  `notes_dir` 为绝对路径（外部 Obsidian vault）则跳过、留在外部。`.helix/`（索引/缓存，运行时可重建）
+  留在项目根、不搬。
 - 检测旧 `repro/` 存在 → 提示（或 `--yes` 执行）整体移到 `experiments/`（现位于 workspace 下）；同样先校验后核对。
 - config 旧 `repro_dir` 字段仍能读，映射到新 `experiments_dir`；缺 `workspace_dir`/`experiments_dir` 给默认值并
   按模板补进 config.yaml（承接「migrate 按模板补 config 字段」）。

@@ -104,7 +104,7 @@ class TestMigrate(unittest.TestCase):
 
     def test_state_file_written(self):
         migrate.run_migrate(self.cfg, scope="project")
-        state = self.root / "workspace" / ".helix" / "state.json"  # index/state now under workspace/
+        state = self.root / ".helix" / "state.json"  # runtime data stays at base_dir, not workspace/
         self.assertTrue(state.exists())
 
     def test_config_fields_appended_with_comments_and_placeholder(self):
@@ -241,6 +241,16 @@ class TestMigrate(unittest.TestCase):
         report, _ = migrate.run_migrate(self.cfg, scope="project", do_move=True)
         self.assertEqual(report.workspace_migrated, [])          # nothing left to move
         self.assertFalse(report.workspace_migrate_pending)
+
+    def test_helix_stays_at_base_not_moved(self):
+        # .helix (index/cache — runtime data) stays at base_dir, never moved into workspace/
+        (self.root / ".helix").mkdir()
+        (self.root / ".helix" / "index.db").write_text("INDEX", encoding="utf-8")
+        (self.root / "experiments" / "d").mkdir(parents=True)
+        report, _ = migrate.run_migrate(self.cfg, scope="project", do_move=True)
+        self.assertNotIn(".helix", report.workspace_migrated)
+        self.assertTrue((self.root / ".helix" / "index.db").exists())          # stays put
+        self.assertFalse((self.root / "workspace" / ".helix" / "index.db").exists())
 
     def test_absolute_notes_dir_not_moved(self):
         # notes_dir points at an external absolute path -> notes stays external, only experiments moves

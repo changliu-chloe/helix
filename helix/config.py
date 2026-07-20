@@ -179,8 +179,8 @@ class Config:
 
     @property
     def index_path(self) -> Path:
-        """FTS5 index location, at .helix/index.db under workspace/."""
-        return self.workspace_path / ".helix" / "index.db"
+        """FTS5 index location, at .helix/index.db under base_dir (runtime data, rebuildable, not user source)."""
+        return self.base_dir / ".helix" / "index.db"
 
     def all_categories(self) -> list[str]:
         """Deduplicated arXiv categories across all domains."""

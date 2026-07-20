@@ -17,7 +17,8 @@ class TestBaseDirAnchor(unittest.TestCase):
         self.assertEqual(cfg.workspace_path, Path("/proj/workspace"))
         self.assertEqual(cfg.notes_path, Path("/proj/workspace/notes"))
         self.assertEqual(cfg.experiments_path, Path("/proj/workspace/experiments"))
-        self.assertEqual(cfg.index_path, Path("/proj/workspace/.helix/index.db"))
+        # .helix (runtime index/cache) stays at base_dir, NOT under workspace/
+        self.assertEqual(cfg.index_path, Path("/proj/.helix/index.db"))
 
     def test_custom_workspace_dir(self):
         cfg = Config(workspace_dir="ws", notes_dir="notes", _path=Path("/proj/config.yaml"))

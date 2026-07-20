@@ -34,7 +34,7 @@ LOCK_FILE = PROJECT_ROOT / "uv.lock"
 
 
 def _state_path(cfg: Config) -> Path:
-    """Migration state lives next to the index, under workspace/.helix/ (git-ignored, per-checkout)."""
+    """Migration state lives next to the index, under .helix/ (git-ignored, per-checkout)."""
     return cfg.index_path.parent / "state.json"
 
 
@@ -282,7 +282,10 @@ def _upgrade_results_files(cfg: Config, report: MigrateReport, logs: list[str]) 
 
 
 def _move_into_workspace(src: Path, dst: Path, label: str, report: MigrateReport, logs: list[str]) -> None:
-    """Copy src -> dst, verify file count, then delete src. Only-move-never-lose (same as repro migration)."""
+    """Copy a user-content dir (notes/experiments/draft) src -> dst, verify file count, then delete src.
+
+    Conservative: if dst already exists, skip (merging two note trees is risky) and ask for manual review.
+    """
     if dst.exists():
         logs.append(f"跳过搬迁：目标 {dst} 已存在，为避免覆盖不自动合并。请手动核对 {src} 与 {dst}")
         report.workspace_migrate_pending = True
@@ -301,20 +304,20 @@ def _move_into_workspace(src: Path, dst: Path, label: str, report: MigrateReport
 
 
 def _migrate_to_workspace(cfg: Config, report: MigrateReport, logs: list[str], do_move: bool) -> None:
-    """Move legacy top-level data dirs (notes/experiments/.helix/draft_notes) under workspace/.
+    """Move legacy top-level user-data dirs (notes/experiments/draft_notes) under workspace/.
 
     Storage-layout change (CLAUDE.md): only-move-never-lose, idempotent, --yes gated. A notes_dir that is
-    an absolute path (external Obsidian vault) is left in place. Targets already inside workspace/ are skipped.
+    an absolute path (external Obsidian vault) is left in place. `.helix/` (index/cache — runtime data,
+    rebuildable) stays at base_dir and is NOT moved. Targets already inside workspace/ are skipped.
     """
     ws = cfg.workspace_path
     base = cfg.base_dir
-    # (legacy source under base_dir, target under workspace, label). notes only if notes_dir is relative.
+    # (src under base_dir, dst under workspace, label). notes only if notes_dir is relative.
     candidates: list[tuple[Path, Path, str]] = []
     if not Path(cfg.notes_dir).expanduser().is_absolute():
         candidates.append((base / cfg.notes_dir, ws / cfg.notes_dir, "notes"))
     if not Path(cfg.experiments_dir).expanduser().is_absolute():
         candidates.append((base / cfg.experiments_dir, ws / cfg.experiments_dir, "experiments"))
-    candidates.append((base / ".helix", ws / ".helix", ".helix"))
     candidates.append((base / "draft_notes", ws / "draft_notes", "draft_notes"))
 
     pending: list[tuple[Path, Path, str]] = []

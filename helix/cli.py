@@ -67,7 +67,7 @@ def cmd_migrate(args: argparse.Namespace) -> int:
     _err(f"migrate 完成：新链 {len(report.linked)} 个 skill，清理 {len(report.pruned)} 个失效软链")
     todo: list[str] = []
     if report.workspace_migrate_pending:
-        todo.append("发现数据目录（notes/experiments/.helix 等）还在 workspace/ 外。跑 `helix migrate --yes` 搬进 workspace/（只搬不删、先校验）")
+        todo.append("发现数据目录（notes/experiments 等）还在 workspace/ 外。跑 `helix migrate --yes` 搬进 workspace/（只搬不删、先校验）")
     if report.workspace_migrated:
         _err(f"已搬进 workspace/：{'、'.join(report.workspace_migrated)}")
     if report.repro_rename_pending:
