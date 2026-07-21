@@ -93,29 +93,45 @@ uv run helix exp pull <工作区> [--dry-run]                   # 拉 results/{m
 用户确认（或让用户改），拿到确认后带 `--remote-path <路径>` 重跑——helix 写回 sync.yaml，之后不再问。
 传输用 scp（Mac/Win/Linux 通用），走 `~/.ssh/config` alias（含跳板机/key）。
 
-编排时严格守下面 6 条（这是本 skill 的核心职责）：
+编排时严格守下面 8 条（这是本 skill 的核心职责）：
 
-1. **会话精简**：一次性的活（装环境、下数据）用 `--oneshot`，跑完自动退会话；长驻的活（跑实验）不加，
-   保留会话。干完活主动 `exp sessions` 看一眼，把不再用的会话 `exp kill` 掉，别堆积。
-2. **换源装环境、不动物理机**（规则 2+6）：环境一律建在隔离层——`uv venv` / miniconda env / 容器镜像，
-   **不改物理机全局环境**。装包换国内源提速（如 `uv pip install -i <mirror> ...` 或 conda 配 channel）。
-   装环境这类用 `--oneshot`。
-3. **先烟测、再全量、预估时长**（规则 3）：
+1. **环境管理优先级**：优先用 `uv` 管理依赖；有 `pyproject.toml` / `uv.lock` 时用 `uv sync`，
+   只有临时补包装进项目隔离环境时才用 `uv pip install`。其次用 conda：项目明确给 `environment.yml`、
+   CUDA/PyTorch 组合明显依赖 conda、或上游复现说明要求 conda 时使用。再往后才考虑容器镜像。
+2. **环境变更分级审批**：
+   - 可自主执行：项目目录内 `.venv`、实验专属 conda env、下载数据到本实验远程目录、项目级配置或 cache。
+   - 需先告知用户并拿到确认：`sudo`、`apt` / `yum` / `dnf`、CUDA/driver/NCCL、系统 Python、
+     全局 conda/base 环境、Docker daemon、系统服务、shell rc 文件、`/usr` / `/opt` / `/etc` 下的任何修改。
+   - 审批说明必须写清楚：要改什么、影响范围、回滚方式、是否会影响同机器其他用户/任务。
+3. **隔离安装、不动物理机**：环境一律建在隔离层——`uv venv` / 实验专属 conda env / 容器镜像，
+   不改物理机全局环境。装包可换国内源提速（如 `uv pip install -i <mirror> ...` 或 conda 配 channel）。
+   装环境、下数据这类一次性任务用 `--oneshot`，命令结束后会话应自动退出。
+4. **tmux 会话命名与复用**：
+   - 长驻实验会话：`helix-<实验短名>-run`，用于训练/评测主进程，可复用，保留给用户自行查看。
+   - 一次性会话：`helix-<实验短名>-tmp-<用途>`，用于装环境、下载数据、预处理，必须加 `--oneshot`。
+   - 调试会话：`helix-<实验短名>-debug`，只在需要交互排障时使用；问题定位后给出结论，再决定是否保留。
+5. **tmux 数量维护**：每轮远程操作前后都用 `uv run helix exp sessions <工作区>` 看会话列表。
+   一次性会话执行完毕且分析完毕后必须清掉；残留会话用 `uv run helix exp kill <工作区> --session <名>`。
+   长驻实验会话只有在实验结束、结果已回拉、关键日志已检查后再杀；若继续保留，要告诉用户会话名和用途。
+6. **先烟测、再全量、预估时长**：
    - 跑前先 `exp probe` 看磁盘够不够、GPU 空不空，条件不满足先告诉用户别硬跑。
    - 先小规模烟测（小 batch/少步数/子集），通过再上全量。
    - 预估全量时长。**若实验会跑很久：启动后直接结束当前会话、不轮询**，明确告诉用户
      「实验在 <机器> 的 tmux 会话 <名> 里跑，预计约 <时长>，回头用 `exp sessions`/`exp pull` 查」。
-4. **每轮版本可追溯**（规则 4）：一轮 = 上次实验结束到这次开始之间的改动。代码在本地改，用户说开始实验时，
-   用 `exp start` ——它先把本轮改动 git 提交、再 push 上远程，确保**远程跑的代码 = 本地某个 commit**。
-   有条件先在本地跑单测再 start。**可选 git**：需 config 开 `git.enabled=true` + 填 name/email；开启后每个
-   实验工作区是独立 git 仓库（一实验一仓库），helix 用该身份提交本轮。关闭则 start 只 push、不碰 git。
-   - **提交信息你来定类型**：start 前看本轮改动（`git -C <工作区> diff`，或你清楚这轮改了啥），判断类型
-     （feat / fix / chore / refactor / docs / test / perf），拼成 `<type>: <一句摘要>`，用
-     `exp start <工作区> -m "<type>: …"` 传入。**message 必须带类型前缀**——helix 只原样提交、不替你分类。
-5. **凭据不经手**（规则 5）：你只调 helix 命令，SSH/sudo 密码由 CLI 从 secrets 文件注入远程，
+7. **每轮状态记录（git 可选）**：一轮 = 上次实验结束到这次开始之间的改动。代码在本地改，用户说开始实验时，
+   用 `exp start` 同步到远程。有条件先在本地跑单测再 start。
+   - 默认 `git.enabled=false`：`exp start` 只 push 当前工作区快照，不创建提交；这时没有 commit 级追溯。
+     你需要在实验记录里写清本轮改动摘要、启动命令、tmux 会话名、远程路径、开始时间，确保结果能和本轮运行对齐。
+   - 开启 `git.enabled=true` + 填 name/email：每个实验工作区是独立 git 仓库（一实验一仓库），`exp start`
+     会先提交本轮改动、再 push 上远程，确保**远程跑的代码 = 本地某个 commit**。
+   - **提交信息你来定类型**：git 开启时，start 前看本轮改动（`git -C <工作区> diff`，或你清楚这轮改了啥），
+     判断类型（feat / fix / chore / refactor / docs / test / perf），拼成 `<type>: <一句摘要>`，
+     用 `exp start <工作区> -m "<type>: …"` 传入。**message 必须带类型前缀**——helix 只原样提交、不替你分类。
+8. **凭据不经手**：你只调 helix 命令，SSH/sudo 密码由 CLI 从 secrets 文件注入远程，
    绝不出现在你的上下文或任何请求里。需要 sudo 的命令加 `--sudo`，密码走 stdin，你无需也拿不到它。
-6. **要写实验代码**：把 plan.md 交给**这个在本地跑的编码 agent（就是你）** 对着远程仓库实现——本地改完
-   用 `exp start` 同步上去。helix 不替你写代码（见「非目标」）。
+
+要写实验代码时，把 plan.md 交给**这个在本地跑的编码 agent（就是你）** 对着远程仓库实现——本地改完
+用 `exp start` 同步上去。helix 不替你写代码（见「非目标」）。
 
 ### 6. 结果回流落笔记（撰稿抓手）
 `exp pull` 回来后，读 `results/{metrics,plots,tables}/` 里的原始数据，蒸馏进 `results/index.md`：
