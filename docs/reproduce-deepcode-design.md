@@ -10,7 +10,7 @@
 
 - `setup.md`：原文实验设置；
 - `plan.md`：本机/远程怎么跑；
-- `sync.yaml`：本实验远程传送清单；
+- `sync.yaml`：本实验远程传送清单 + agent 可见的非敏感运行视图；
 - `results/index.md`：结果回流后的加工笔记。
 
 缺口在于：从论文到可执行实验仍主要依赖 agent 临场发挥。复杂论文复现时，agent 容易漏掉算法细节、实验矩阵、
@@ -217,7 +217,7 @@ implementation_strategy: 分阶段实现顺序、每步测试点、降配策略
 
 - `helix exp new` 生成更强的 `setup.md` / `plan.md` 引导；
 - `RESULTS_LAYOUT.md` 后续可加 run manifest 约定；
-- `sync.yaml` 仍只做远程和传送清单，不塞复杂执行逻辑；
+- `sync.yaml` 仍只做远程、传送清单和非敏感 `agent_view`，不塞复杂执行逻辑；
 - `exp run/probe/start/pull/sessions/kill` 继续是确定性原子操作。
 
 可选新增 CLI 能力：

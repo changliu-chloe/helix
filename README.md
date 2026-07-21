@@ -115,7 +115,7 @@ uv run helix search "vision language action" --top-n 5   # 检索并打分
 | `helix index search "<q>"` | 本地全文检索（bm25 + snippet） | ✅ |
 | `helix fetch <id>` | 抓全文（MinerU）+ 高清图（源码包）到 assets/ | ✅ |
 | `helix exp vram --params <B>` | 显存估算 + 对各硬件档判级（装得下/量化/多卡TP/offload） | ✅ |
-| `helix exp new <笔记\|id>` | 建复现工作区骨架（setup+plan+results/+RESULTS_LAYOUT+sync.yaml），`--draft` 落 draft_notes | ✅ |
+| `helix exp new <笔记\|id>` | 建复现工作区骨架（setup+plan+results/+RESULTS_LAYOUT+sync.yaml；含 agent_view 非敏感运行视图），`--draft` 落 draft_notes | ✅ |
 | `helix exp new --mine "<实验名>"` | 建我自己的实验工作区（type:mine，无 setup.md，plan.md 即实验设计） | ✅ |
 | `helix exp push/pull <工作区>` | 本地↔远程 GPU 传送带（scp 封装，跨平台；首次需 `--remote-path` 确认远程路径；`--dry-run` 预览；结果只回流 results/） | ✅ |
 | `helix exp start <工作区>` | 开始实验：可选 git 提交本轮改动（`git.enabled=true` 时）+ push 代码上远程；默认只 push、不碰 git | ✅ |

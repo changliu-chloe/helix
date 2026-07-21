@@ -42,7 +42,7 @@
 workspace/experiments/<方向>/<短名>/
   setup.md              # 原文实验设置（仅 type:repro 有；type:mine 无原文可抄）
   plan.md               # type:repro=本机复现方案；type:mine=我的实验设计
-  sync.yaml             # 声明用哪台远程 + push/pull 清单
+  sync.yaml             # 声明用哪台远程 + push/pull 清单 + agent 可见的非敏感运行视图
   RESULTS_LAYOUT.md     # 规则文件：指导远程 agent 把结果放哪（push 时随行）
   results/
     index.md            # 加工后的结果 + 解读 + 「精读时漏掉的问题」一节；frontmatter 带 type
@@ -128,9 +128,27 @@ remotes:
 ```yaml
 # experiments/<方向>/<短名>/sync.yaml —— 本实验的传送清单
 remote: gpu-a100                      # 引用 config.remotes 里的机器名
-push: [plan.md, scripts/**, configs/**, RESULTS_LAYOUT.md]   # RESULTS_LAYOUT.md 必带
+push: [sync.yaml, plan.md, scripts/**, configs/**, RESULTS_LAYOUT.md]   # RESULTS_LAYOUT.md 必带
 pull: [results/metrics/**, results/plots/**, results/tables/**]
+agent_view:
+  models:
+    base_model: /mnt/models/Qwen2.5-7B-Instruct   # 路径或 HF id；不写 token
+    tokenizer: /mnt/models/Qwen2.5-7B-Instruct
+    checkpoints: /data/checkpoints/my-exp
+  datasets:
+    raw: /data/datasets/raw/my-task
+    processed: /data/datasets/processed/my-task
+    cache: /data/cache/my-task
+  runtime:
+    workdir: .                                    # 相对 remote_path
+    env: helix-my-exp                             # uv venv / conda env / container 名
+  notes:
+    - 模型和数据路径是远程机器上的既有路径，agent 可直接引用。
 ```
+
+`agent_view` 是暴露给 agent 的**非敏感运行视图**，解决“模型权重在哪里、数据集在哪里、cache 用哪块盘、
+环境叫什么”这类上下文问题。这里不要写 SSH 密码、sudo 密码、API token、私有下载链接、访问密钥；敏感凭据
+仍只放 `config.secrets.yaml` 或由用户单独审核。
 
 ## 3. 范围与非目标
 
