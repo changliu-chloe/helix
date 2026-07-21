@@ -260,17 +260,27 @@ def build_setup_skeleton(title: str, note_rel: str, cfg: Config) -> str:
 > 来源笔记：[[{note_rel}]]
 > 本文件只客观记录**原文怎么做的**（复现方案见同目录 plan.md）。只写论文里有的，推断要标注。
 
+## 论文结构与方法拆解
+<!-- agent: paper-to-setup 从深读笔记和 fulltext.md 抽取：
+- paper structure map：论文主张、方法章节、实验章节、关键表图
+- method decomposition：核心模块、模块交互、数据流
+只写原文事实；论文未给出/推断/需要用户确认的内容要标注来源与置信度。 -->
+
+## 原文算法 / 公式 / 训练过程
+<!-- agent: 伪代码、公式、损失函数、优化过程、训练/推理流程、关键实现细节。
+标明对应论文章节、公式号、算法框或图表；不要把本机实现方案写在这里。 -->
+
 ## 原文实验环境
-<!-- agent: 原文用的 GPU 型号/卡数、互联、框架（vLLM/SGLang/…）、CUDA/Python 版本 -->
+<!-- agent: 原文用的 GPU 型号/卡数、互联、框架（vLLM/SGLang/…）、CUDA/Python 版本、依赖版本 -->
 
 ## 原文模型
 <!-- agent: 模型名与规模（参数量）、精度（fp16/fp8/…）、是否开源可下载、HF 名称 -->
 
 ## 原文数据集 / 工作流
-<!-- agent: 数据集名、规模、划分、下载方式；有无子集可缩比（这条信息 plan.md 会用到） -->
+<!-- agent: 数据集名、规模、划分、下载方式、预处理流程；有无子集可缩比（这条信息 plan.md 会用到） -->
 
 ## 原文评测指标 与 baseline
-<!-- agent: 指标定义与计算方式、对齐原文表几、baseline 有哪些（开源/需自复现） -->
+<!-- agent: 指标定义与计算方式、对齐原文表几、baseline 有哪些（开源/需自复现）、是否可直接引用官方结果 -->
 
 ## 原文关键超参
 <!-- agent: batch/group size、温度、序列长度、学习率等复现必需的配置值 -->
@@ -287,13 +297,23 @@ def build_mine_plan_skeleton(title: str, note_rel: str, cfg: Config) -> str:
     ref = f"> 对标/借鉴：[[{note_rel}]]\n" if note_rel else ""
     return f"""# 实验设计：{title}
 
-{ref}> 这是我自己的实验（type:mine）。本文件既是设计也是执行方案；结果落 results/。
+{ref}> 这是我自己的实验（type:mine）。从 hypothesis-to-plan 开始；本文件既是设计也是执行方案，结果落 results/。
 
 ## 1. 研究问题 / 假设
-<!-- agent: 这个实验要验证什么假设、回答什么问题；和对标论文的关系（改进/对比/消融） -->
+<!-- agent: hypothesis：这个实验要验证什么假设/claim、回答什么问题；和对标论文的关系（改进/对比/消融）。
+预期必须可证伪，不能把"我希望成立"写成"结果会成立"。 -->
 
-## 2. 方法与实现
-<!-- agent: 用什么模型/数据/算法；核心实现点；相对 baseline 改了什么 -->
+## 2. 方法、baseline 与实验矩阵
+<!-- agent: 必须覆盖五类信息：
+- baseline：最小可信 baseline 和可选强 baseline
+- variables：自变量、因变量、控制变量
+- experiment_matrix：主实验、消融、缩比试验、失败判据
+- file_structure：本实验需要的代码/配置/脚本结构
+- implementation_components：核心算法、模型、数据、评测模块如何落到文件
+- validation_approach：烟测、全量实验、预期指标、验收标准
+- environment_setup：uv/conda/容器方案、依赖版本、硬件要求
+- implementation_strategy：分阶段实现顺序、每步测试点、降配策略
+说明相对 baseline 改了什么。 -->
 
 ## 3. 硬件与运行方案
 可用硬件档：
@@ -313,7 +333,11 @@ uv run helix exp vram --params <B> --dtype <精度> --ctx <长度> --batch <N> [
 ```
 
 ## 5. 评测与预期
-<!-- agent: 算什么指标、baseline 对比、预期区间、验收标准 -->
+<!-- agent: 算什么指标、baseline 对比、预期区间、验收标准；说明哪些结果支持/不支持 hypothesis。 -->
+
+## 6. 结果到 claim / 下一轮决策
+<!-- agent: result-to-claim 的预设规则：如果结果达到/未达到验收标准，分别支持什么 claim、
+不支持什么 claim，下一步是继续全量、补消融、改方法、换 baseline 还是停止该方向。 -->
 """
 
 
@@ -326,6 +350,14 @@ def build_plan_skeleton(title: str, note_rel: str, cfg: Config) -> str:
     return f"""# 复现方案：{title}
 
 > 来源笔记：[[{note_rel}]] ｜ 原文实验设置见同目录 setup.md（本文件只讲"本机怎么跑"）
+
+<!-- agent: setup-to-plan 必须把原文事实转成可执行计划，并覆盖五类信息：
+- file_structure：本实验需要的代码/配置/脚本结构
+- implementation_components：核心算法、模型、数据、评测模块如何落到文件
+- validation_approach：烟测、全量实验、预期指标、验收标准
+- environment_setup：uv/conda/容器方案、依赖版本、硬件要求
+- implementation_strategy：分阶段实现顺序、每步测试点、降配策略
+首次远程路径、物理机环境变更、全量长实验启动前都要停下让用户确认。 -->
 
 ## 1. 推荐方案（先看这里）
 <!-- agent: 一句话给结论——用哪台机、哪个模型、什么精度/并行、跑哪个实验。让用户不用往下翻就能开跑。
@@ -349,7 +381,8 @@ uv run helix exp vram --params <B> --dtype <精度> --ctx <长度> --batch <N> [
 <!-- agent: 贴判级结论：fits_single / fits_multi_tp(TP=?) / needs_quant… -->
 
 ## 2. 分步执行命令
-<!-- agent: 从建环境到出指标的可复制命令，按推荐方案写实：
+<!-- agent: 覆盖 environment_setup 和 implementation_strategy：从建环境到出指标的可复制命令，按推荐方案写实。
+先烟测、再全量；长实验写明预计时长和 tmux 会话名。
 ```bash
 # 1. 建环境 + clone 官方仓库
 # 2. 下模型/数据（HF 命令）
@@ -358,13 +391,16 @@ uv run helix exp vram --params <B> --dtype <精度> --ctx <长度> --batch <N> [
 ```
 -->
 
-## 3. 实现组件
-<!-- agent: 要跑通/验证的核心算法/模块——做什么、对应论文哪节/哪个公式、关键超参。
-用官方仓库时说清"复用什么、要对齐哪些超参"，别重写。 -->
+## 3. 实现组件与文件结构
+<!-- agent: 覆盖 file_structure 和 implementation_components：
+- 需要哪些代码/配置/脚本文件，各自负责什么
+- 核心算法/模块对应论文哪节/哪个公式/哪个伪代码
+- 数据处理、模型加载、训练/推理、评测如何连接
+用官方仓库时说清"复用什么、要对齐哪些超参"，别重写；参考代码要记录来源和许可证风险。 -->
 
 ## 4. 验证方案与预期结果
-<!-- agent: 复现哪个实验、数据集子集、算什么指标、预期数值区间（对齐原文表几）、
-验收标准（如"吞吐提升在原文 ±X% 内即算成功"；缩比复现则"看相对趋势不看绝对倍数"）。 -->
+<!-- agent: 覆盖 validation_approach：复现哪个实验、数据集子集、算什么指标、预期数值区间（对齐原文表几）、
+烟测命令、全量命令、验收标准（如"吞吐提升在原文 ±X% 内即算成功"；缩比复现则"看相对趋势不看绝对倍数"）。 -->
 
 ## 5. 可复现性分级
 <!-- agent: 选 A/B/C 并说明理由
@@ -405,6 +441,25 @@ def build_results_index_skeleton(title: str, note_rel: str, kind: str, domain: s
     body = yaml.safe_dump(fm, allow_unicode=True, sort_keys=False, default_flow_style=False)
     link = f"[[{note_rel}]]" if note_rel else "（无）"
     origin = "复现的论文" if kind == "repro" else "对标/借鉴的论文"
+    compare_heading = "与预期/原文的对比" if kind == "repro" else "与预期 / baseline 的对比"
+    compare_prompt = (
+        "复现→对齐原文表几、差多少；等价复现/缩比降配讲清楚"
+        if kind == "repro"
+        else "我的实验→对比 baseline，说明是否达到 plan.md 的验收标准"
+    )
+    problem_heading = "精读时没发现的问题" if kind == "repro" else "实验过程中暴露的问题"
+    problem_prompt = (
+        "复现/实验过程暴露、但精读论文时没注意到的问题——本节价值最高，务必如实记。"
+        if kind == "repro"
+        else "实现/运行/评测暴露的问题、可能混杂因素、数据或 baseline 风险。"
+    )
+    claim_section = ""
+    if kind == "mine":
+        claim_section = """
+## 结果支持的 claim / 下一轮动作
+<!-- agent: result-to-claim：写清 intended_claim、supported_claim、unsupported_claim、证据强度、
+可能混杂因素，以及下一步是继续全量、补消融、改方法、换 baseline 还是停止。 -->
+"""
     return f"""---
 {body}---
 # 结果：{title}
@@ -414,15 +469,66 @@ def build_results_index_skeleton(title: str, note_rel: str, kind: str, domain: s
 ## 结果概览
 <!-- agent: 把 results/metrics、results/plots、results/tables 里的原始数据蒸馏成表/图 + 一句话结论 -->
 
-## 与预期/原文的对比
-<!-- agent: 复现→对齐原文表几、差多少；我的实验→对比 baseline。等价复现/缩比降配讲清楚 -->
+## {compare_heading}
+<!-- agent: {compare_prompt} -->
+{claim_section}
 
-## 精读时没发现的问题
-<!-- agent: 复现/实验过程暴露、但精读论文时没注意到的问题——本节价值最高，务必如实记。
+## {problem_heading}
+<!-- agent: {problem_prompt}
 没有就写「暂无」，别硬凑。 -->
 
 ## 撰稿可用素材
 <!-- agent: 哪些结果/图表可直接进论文；对应哪一节（相关工作 / 实验 / 贡献） -->
+"""
+
+
+def build_progress_skeleton(title: str, kind: str) -> str:
+    """User-confirmed reproduction progress tracker. The CLI only creates it; agents maintain it as text."""
+    if kind == "repro":
+        heading = "复现进度"
+        stage_a = "- [ ] A. paper-to-setup：原文事实抽取（等待用户确认）"
+        stage_b = "- [ ] B. setup-to-plan：本机/远程可执行计划（等待用户确认）"
+        stage_c = "- [ ] C. plan-to-code：代码实现与最小测试/烟测（等待用户确认）"
+        stage_d = "- [ ] D. run-monitor-analyze：全量运行、分析、结果回流（等待用户确认）"
+        current = "A. paper-to-setup"
+        next_step = "填 setup.md：抽取论文结构、算法/公式、数据、指标、baseline、环境和代码可得性。"
+        note = "阶段完成权归用户：agent 只能写「建议确认」，不能替用户勾选确认。"
+    else:
+        heading = "实验进度"
+        stage_a = "- [ ] A. hypothesis-to-plan：假设、baseline、变量、实验矩阵和验收标准（等待用户确认）"
+        stage_b = "- [ ] B. plan-to-code：代码实现与最小测试/烟测（等待用户确认）"
+        stage_c = "- [ ] C. run-monitor-analyze：全量运行、分析、结果回流（等待用户确认）"
+        stage_d = "- [ ] D. result-to-claim：判断结果支持/不支持什么 claim，决定下一轮动作（等待用户确认）"
+        current = "A. hypothesis-to-plan"
+        next_step = "填 plan.md：明确 hypothesis、baseline、变量、实验矩阵、指标、验收标准和分步命令。"
+        note = "这是用户自己的实验；不生成 setup.md，入口阶段是 hypothesis-to-plan。阶段完成权归用户。"
+    return f"""# {heading}：{title}
+
+> {note}
+
+## 当前阶段
+{current}
+
+## 阶段清单
+{stage_a}
+{stage_b}
+{stage_c}
+{stage_d}
+
+## 用户确认记录
+- A 完成：待确认
+- B 完成：待确认
+- C 完成：待确认
+- D 完成：待确认
+
+## 当前阻塞
+暂无
+
+## 下一步
+{next_step}
+
+## 运行记录
+<!-- agent: 每轮记录改动摘要、启动命令、tmux 会话名、远程路径、开始/结束时间、commit 或快照摘要。 -->
 """
 
 
@@ -448,9 +554,9 @@ def build_sync_yaml(kind: str) -> str:
 
     Lives next to the experiment (travels with the workspace). `remote:` references a name in config.remotes.
     """
-    push = ["sync.yaml", "plan.md", "scripts/**", "configs/**", "RESULTS_LAYOUT.md"]
+    push = ["sync.yaml", "PROGRESS.md", "plan.md", "scripts/**", "configs/**", "RESULTS_LAYOUT.md"]
     if kind == "repro":
-        push.insert(1, "setup.md")
+        push.insert(2, "setup.md")
     spec = {
         "remote": "",  # fill with a name from config.remotes; empty = transport disabled for this workspace
         "remote_path": "",  # empty = confirm on first push via --remote-path; then reused
@@ -488,9 +594,9 @@ def build_experiment_workspace(
 ) -> tuple[Path, list[str]]:
     """Generate an experiment workspace skeleton under experiments/<domain>/<short_name>/ (or draft_notes/).
 
-    kind="repro" (reproduce a paper): setup.md + plan.md + results/index.md + RESULTS_LAYOUT.md + sync.yaml.
-    kind="mine" (my own experiment): plan.md (= experiment design) + results/index.md + RESULTS_LAYOUT.md + sync.yaml
-        (no setup.md -- there is no original paper to transcribe).
+    kind="repro" (reproduce a paper): setup.md + plan.md + PROGRESS.md + results/index.md + RESULTS_LAYOUT.md + sync.yaml.
+    kind="mine" (my own experiment): plan.md (= experiment design) + PROGRESS.md + results/index.md +
+        RESULTS_LAYOUT.md + sync.yaml (no setup.md -- there is no original paper to transcribe).
 
     Returns (workspace dir, list of newly created relative paths). Verifies non-empty after persisting, else raises OSError.
     """
@@ -506,6 +612,7 @@ def build_experiment_workspace(
         items.append(("plan.md", build_plan_skeleton(title, note_rel, cfg)))
     else:
         items.append(("plan.md", build_mine_plan_skeleton(title, note_rel, cfg)))
+    items.append(("PROGRESS.md", build_progress_skeleton(title, kind)))
     items.append(("results/index.md", build_results_index_skeleton(title, note_rel, kind, domain)))
     items.append(("RESULTS_LAYOUT.md", RESULTS_LAYOUT))
     items.append(("sync.yaml", build_sync_yaml(kind)))

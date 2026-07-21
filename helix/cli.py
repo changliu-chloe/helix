@@ -72,6 +72,10 @@ def cmd_migrate(args: argparse.Namespace) -> int:
         _err(f"已搬进 workspace/：{'、'.join(report.workspace_migrated)}")
     if report.repro_rename_pending:
         todo.append("发现旧 repro/ 复现目录，新版改用 experiments/。跑 `helix migrate --yes` 搬迁（只搬不删、先校验）")
+    if report.progress_created:
+        todo.append("已为旧实验工作区补建 PROGRESS.md；当前阶段标为“待判定”，请让 agent 读取 setup/plan/results 后给出阶段建议，并由你确认")
+    if report.sync_push_upgraded:
+        _err(f"已升级 sync.yaml push 清单（加入 PROGRESS.md）：{'、'.join(report.sync_push_upgraded)}")
     if report.config_keys_renamed:
         _err(f"已改名 config.yaml 字段（保留原值、删旧名）：{'、'.join(report.config_keys_renamed)}")
     if report.config_fields_written:

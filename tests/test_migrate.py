@@ -5,6 +5,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+import yaml
+
 from helix import init, migrate
 from helix.config import Config
 
@@ -223,6 +225,59 @@ class TestMigrate(unittest.TestCase):
         self.assertFalse((ws / "results.md").exists())
         self.assertEqual((ws / "results" / "index.md").read_text(encoding="utf-8"), "old results")
         self.assertTrue(report.results_upgraded)
+
+    def test_migrate_creates_progress_for_existing_repro_workspace(self):
+        ws = self.root / "workspace" / "experiments" / "d" / "paper"
+        ws.mkdir(parents=True)
+        (ws / "setup.md").write_text("setup", encoding="utf-8")
+        (ws / "plan.md").write_text("plan", encoding="utf-8")
+        (ws / "sync.yaml").write_text(
+            "remote: ''\n"
+            "remote_path: ''\n"
+            "push:\n"
+            "- sync.yaml\n"
+            "- setup.md\n"
+            "- plan.md\n"
+            "pull: []\n",
+            encoding="utf-8",
+        )
+        report, _ = migrate.run_migrate(self.cfg, scope="project")
+        progress = (ws / "PROGRESS.md").read_text(encoding="utf-8")
+        self.assertIn("待判定", progress)
+        self.assertIn("A. paper-to-setup", progress)
+        self.assertIn("阶段需要 agent 分析后由用户确认", progress)
+        spec = yaml.safe_load((ws / "sync.yaml").read_text(encoding="utf-8"))
+        self.assertIn("PROGRESS.md", spec["push"])
+        self.assertIn("d/paper", report.progress_created)
+        self.assertIn("d/paper", report.sync_push_upgraded)
+
+    def test_migrate_creates_progress_for_existing_mine_workspace(self):
+        ws = self.root / "workspace" / "experiments" / "d" / "mine"
+        ws.mkdir(parents=True)
+        (ws / "plan.md").write_text("plan", encoding="utf-8")
+        report, _ = migrate.run_migrate(self.cfg, scope="project")
+        progress = (ws / "PROGRESS.md").read_text(encoding="utf-8")
+        self.assertIn("A. hypothesis-to-plan", progress)
+        self.assertIn("D. result-to-claim", progress)
+        self.assertIn("kind：mine", progress)
+        self.assertIn("d/mine", report.progress_created)
+
+    def test_progress_migration_is_idempotent(self):
+        ws = self.root / "workspace" / "experiments" / "d" / "paper"
+        ws.mkdir(parents=True)
+        (ws / "setup.md").write_text("setup", encoding="utf-8")
+        (ws / "plan.md").write_text("plan", encoding="utf-8")
+        (ws / "sync.yaml").write_text("push:\n- sync.yaml\n- plan.md\npull: []\n", encoding="utf-8")
+        migrate.run_migrate(self.cfg, scope="project")
+        first_progress = (ws / "PROGRESS.md").read_text(encoding="utf-8")
+        first_sync = yaml.safe_load((ws / "sync.yaml").read_text(encoding="utf-8"))
+        report, _ = migrate.run_migrate(self.cfg, scope="project")
+        self.assertEqual((ws / "PROGRESS.md").read_text(encoding="utf-8"), first_progress)
+        second_sync = yaml.safe_load((ws / "sync.yaml").read_text(encoding="utf-8"))
+        self.assertEqual(second_sync["push"].count("PROGRESS.md"), 1)
+        self.assertEqual(first_sync, second_sync)
+        self.assertEqual(report.progress_created, [])
+        self.assertEqual(report.sync_push_upgraded, [])
 
     def test_workspace_migrate_pending_without_yes(self):
         # old layout: notes/ + experiments/ at base_dir, not under workspace/
