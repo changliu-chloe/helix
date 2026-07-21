@@ -10,6 +10,8 @@ config.secrets.yaml
 workspace/
 # 运行时派生数据（FTS 索引/缓存/迁移状态），留在项目根、可重建，每台机器各自生成
 .helix/
+# 并行开发用的本地临时 git worktree
+.cache/
 # migrate 补 config 字段前的备份
 config.yaml.bak
 # 旧布局残留（migrate 前散在顶层的用户数据；helix migrate --yes 搬进 workspace/ 后可删这几行）
