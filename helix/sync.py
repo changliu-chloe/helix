@@ -12,6 +12,8 @@ The transport contract:
 - What machine to use lives in config.remotes (a reusable machine registry).
 - What THIS experiment pushes/pulls + WHERE it lives on the remote lives in the workspace's sync.yaml
   (remote / remote_path / push / pull), traveling with the workspace.
+- Non-sensitive runtime context the agent should know (model/data/cache paths, environment names) lives
+  in sync.yaml `agent_view`. Secrets never belong there.
 - Where the remote agent drops results lives in RESULTS_LAYOUT.md (pushed up; pull mirrors it).
 
 Safety (aligned with "never lose user data"):
@@ -29,6 +31,7 @@ import shutil
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 import yaml
 
@@ -57,6 +60,7 @@ class SyncSpec:
     remote_path: str = ""                  # confirmed remote workspace dir; empty = not confirmed yet
     push: list[str] = field(default_factory=list)
     pull: list[str] = field(default_factory=list)
+    agent_view: dict[str, Any] = field(default_factory=dict)
 
 
 def load_sync_spec(workspace: Path) -> SyncSpec:
@@ -67,11 +71,15 @@ def load_sync_spec(workspace: Path) -> SyncSpec:
     data = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
     if not isinstance(data, dict):
         data = {}
+    agent_view = data.get("agent_view") or {}
+    if not isinstance(agent_view, dict):
+        agent_view = {}
     return SyncSpec(
         remote=str(data.get("remote", "") or ""),
         remote_path=str(data.get("remote_path", "") or ""),
         push=list(data.get("push") or []),
         pull=list(data.get("pull") or []),
+        agent_view=dict(agent_view),
     )
 
 
@@ -88,10 +96,14 @@ def set_remote_path(workspace: Path, remote_path: str) -> None:
         "push": data.get("push") or [],
         "pull": data.get("pull") or [],
     }
+    if "agent_view" in data:
+        agent_view = data.get("agent_view") or {}
+        spec["agent_view"] = agent_view if isinstance(agent_view, dict) else {}
     header = ("# 本实验的传送清单。remote 填 config.yaml remotes 里的机器名。\n"
               "# remote_path: 远程工作区路径（首次 push 时由你用 --remote-path 确认后写入）。\n"
               "# push: 推到远程的文件（RESULTS_LAYOUT.md 必带，是远程写盘约定）。\n"
-              "# pull: 从远程回拉的结果（对齐 RESULTS_LAYOUT.md 的三个子目录）。\n")
+              "# pull: 从远程回拉的结果（对齐 RESULTS_LAYOUT.md 的三个子目录）。\n"
+              "# agent_view: 暴露给 agent 的非敏感运行上下文（模型/数据/cache/env 路径等）。\n")
     p.write_text(header + yaml.safe_dump(spec, allow_unicode=True, sort_keys=False,
                                          default_flow_style=False), encoding="utf-8")
 

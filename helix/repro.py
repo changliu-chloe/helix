@@ -448,19 +448,37 @@ def build_sync_yaml(kind: str) -> str:
 
     Lives next to the experiment (travels with the workspace). `remote:` references a name in config.remotes.
     """
-    push = ["plan.md", "scripts/**", "configs/**", "RESULTS_LAYOUT.md"]
+    push = ["sync.yaml", "plan.md", "scripts/**", "configs/**", "RESULTS_LAYOUT.md"]
     if kind == "repro":
-        push.insert(0, "setup.md")
+        push.insert(1, "setup.md")
     spec = {
         "remote": "",  # fill with a name from config.remotes; empty = transport disabled for this workspace
         "remote_path": "",  # empty = confirm on first push via --remote-path; then reused
         "push": push,
         "pull": ["results/metrics/**", "results/plots/**", "results/tables/**"],
+        "agent_view": {
+            "models": {
+                "base_model": "",  # remote/local path or HF id visible to the agent; no tokens
+                "tokenizer": "",
+                "checkpoints": "",
+            },
+            "datasets": {
+                "raw": "",  # dataset root/path visible to the agent
+                "processed": "",
+                "cache": "",
+            },
+            "runtime": {
+                "workdir": ".",  # relative to remote_path after push
+                "env": "",  # uv venv / conda env / container name, non-sensitive only
+            },
+            "notes": [],
+        },
     }
     header = ("# 本实验的传送清单。remote 填 config.yaml remotes 里的机器名。\n"
               "# remote_path: 远程工作区路径（首次 push 时由你用 --remote-path 确认后写入）。\n"
               "# push: 推到远程的文件（RESULTS_LAYOUT.md 必带，是远程写盘约定）。\n"
-              "# pull: 从远程回拉的结果（对齐 RESULTS_LAYOUT.md 的三个子目录）。\n")
+              "# pull: 从远程回拉的结果（对齐 RESULTS_LAYOUT.md 的三个子目录）。\n"
+              "# agent_view: 暴露给 agent 的非敏感运行上下文（模型/数据/cache/env 路径等）。\n")
     return header + yaml.safe_dump(spec, allow_unicode=True, sort_keys=False, default_flow_style=False)
 
 

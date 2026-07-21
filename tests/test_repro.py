@@ -130,8 +130,13 @@ class TestWorkspaceSkeleton(unittest.TestCase):
             ws, _ = repro.build_experiment_workspace("T", "n", "X", "t", cfg, kind="repro")
             import yaml as _yaml
             spec = _yaml.safe_load((ws / "sync.yaml").read_text(encoding="utf-8"))
+            self.assertIn("sync.yaml", spec["push"])
             self.assertIn("RESULTS_LAYOUT.md", spec["push"])
             self.assertTrue(all(p.startswith("results/") for p in spec["pull"]))
+            self.assertIn("agent_view", spec)
+            self.assertIn("models", spec["agent_view"])
+            self.assertIn("datasets", spec["agent_view"])
+            self.assertIn("runtime", spec["agent_view"])
 
     def test_draft_goes_to_draft_notes(self):
         with tempfile.TemporaryDirectory() as d:

@@ -16,12 +16,14 @@ from helix import sync
 from helix.config import Config, Remote
 
 
-def _mk_workspace(root: Path, remote: str, push, pull, remote_path="") -> Path:
+def _mk_workspace(root: Path, remote: str, push, pull, remote_path="", agent_view=None) -> Path:
     ws = root / "experiments" / "domX" / "paperY"
     ws.mkdir(parents=True)
+    payload = {"remote": remote, "remote_path": remote_path, "push": push, "pull": pull}
+    if agent_view is not None:
+        payload["agent_view"] = agent_view
     (ws / "sync.yaml").write_text(
-        yaml.safe_dump({"remote": remote, "remote_path": remote_path, "push": push, "pull": pull},
-                       allow_unicode=True),
+        yaml.safe_dump(payload, allow_unicode=True),
         encoding="utf-8",
     )
     (ws / "RESULTS_LAYOUT.md").write_text("rules", encoding="utf-8")
@@ -84,6 +86,32 @@ class TestRemotePathMapping(unittest.TestCase):
             self.assertEqual(spec.remote_path, "/data/confirmed/exp1")
             self.assertEqual(spec.remote, "gpu")           # other fields preserved
             self.assertEqual(spec.push, ["plan.md"])
+
+    def test_agent_view_is_loaded_and_preserved(self):
+        agent_view = {
+            "models": {"base_model": "/models/qwen"},
+            "datasets": {"raw": "/data/ds"},
+            "runtime": {"env": "uv"},
+        }
+        with tempfile.TemporaryDirectory() as d:
+            ws = _mk_workspace(
+                Path(d), "gpu", ["plan.md"], ["results/metrics/**"],
+                agent_view=agent_view,
+            )
+            spec = sync.load_sync_spec(ws)
+            self.assertEqual(spec.agent_view["models"]["base_model"], "/models/qwen")
+            sync.set_remote_path(ws, "/data/confirmed/exp1")
+            updated = sync.load_sync_spec(ws)
+            self.assertEqual(updated.agent_view, agent_view)
+
+    def test_invalid_agent_view_falls_back_to_empty(self):
+        with tempfile.TemporaryDirectory() as d:
+            ws = _mk_workspace(
+                Path(d), "gpu", ["plan.md"], ["results/metrics/**"],
+                agent_view=["bad"],
+            )
+            spec = sync.load_sync_spec(ws)
+            self.assertEqual(spec.agent_view, {})
 
 
 class TestPushPull(unittest.TestCase):
