@@ -244,8 +244,10 @@ include/exclude 和 `--dry-run`，护栏改这样落地（等价）：
 - config 字段改名：migrate 把旧 `repro_dir` 在 config.yaml 里原地改成 `experiments_dir`（保留用户的值、
   删旧名，不留双 key）；loader 不再读旧字段（开发阶段，抹旧留新）。缺 `workspace_dir` 等字段按模板补进
   config.yaml（承接「migrate 按模板补 config 字段」）。改名/补字段前均备份 `config.yaml.bak`。
-- 给已有工作区补 `results/index.md` / `sync.yaml` / `RESULTS_LAYOUT.md`（幂等，已存在跳过）；
+- 给已有工作区补 `results/index.md` / `sync.yaml` / `RESULTS_LAYOUT.md` / `PROGRESS.md`（幂等，已存在跳过）；
   旧的单文件 `results.md`（若有）迁成 `results/index.md`。
+- `PROGRESS.md` 是用户确认的轻量状态，不由 CLI 自动判定阶段。迁移旧工作区时当前阶段写「待判定」；
+  agent 读取 `setup.md` / `plan.md` / `results/index.md` / 运行记录后给阶段建议，用户确认后再勾选。
 
 正在用旧版的用户 `git pull` + `helix migrate` 一步平滑升级，笔记/复现数据一个不丢。
 

@@ -144,6 +144,8 @@ class MigrateReport:
     repro_rename_pending: bool = False                        # legacy repro/ dir exists, needs move to experiments/
     repro_renamed: bool = False                               # repro/ -> experiments/ was performed this run
     results_upgraded: list[str] = field(default_factory=list)  # workspaces whose results.md -> results/index.md
+    progress_created: list[str] = field(default_factory=list)  # workspaces where PROGRESS.md was created
+    sync_push_upgraded: list[str] = field(default_factory=list)  # workspaces whose sync.yaml push includes PROGRESS.md
     workspace_migrate_pending: bool = False                   # data dirs sit outside workspace/, need move
     workspace_migrated: list[str] = field(default_factory=list)  # dirs moved under workspace/ this run
 
@@ -160,6 +162,8 @@ class MigrateReport:
             "repro_rename_pending": self.repro_rename_pending,
             "repro_renamed": self.repro_renamed,
             "results_upgraded": self.results_upgraded,
+            "progress_created": self.progress_created,
+            "sync_push_upgraded": self.sync_push_upgraded,
             "workspace_migrate_pending": self.workspace_migrate_pending,
             "workspace_migrated": self.workspace_migrated,
         }
@@ -323,6 +327,132 @@ def _upgrade_results_files(cfg: Config, report: MigrateReport, logs: list[str]) 
         logs.append(f"结果升级：{rel}/results.md → results/index.md")
 
 
+def _experiment_workspaces(root: Path) -> list[Path]:
+    """Existing experiment workspaces, detected by marker files. Conservative and idempotent."""
+    if not root.exists():
+        return []
+    out: set[Path] = set()
+    for pattern in ("plan.md", "setup.md", "sync.yaml", "results/index.md", "results.md"):
+        for marker in root.rglob(pattern):
+            if marker.is_file():
+                ws = marker.parent
+                if pattern.startswith("results"):
+                    ws = marker.parent.parent
+                out.add(ws)
+    return sorted(out)
+
+
+def _workspace_rel(root: Path, ws: Path) -> str:
+    try:
+        return str(ws.relative_to(root))
+    except ValueError:
+        return str(ws)
+
+
+def _workspace_kind(ws: Path) -> str:
+    """Best-effort kind for migration only. This is not stage judgment."""
+    return "repro" if (ws / "setup.md").exists() else "mine"
+
+
+def _migration_progress_skeleton(ws: Path, kind: str) -> str:
+    """Conservative PROGRESS.md for old in-flight workspaces.
+
+    migrate must not ask an LLM or guess the current stage. It records that the stage needs agent/user
+    triage, while giving the correct stage vocabulary for repro vs mine.
+    """
+    title = ws.name
+    if kind == "repro":
+        heading = "复现进度"
+        stages = [
+            "A. paper-to-setup：原文事实抽取",
+            "B. setup-to-plan：本机/远程可执行计划",
+            "C. plan-to-code：代码实现与最小测试/烟测",
+            "D. run-monitor-analyze：全量运行、分析、结果回流",
+        ]
+        next_step = "让 reproduce agent 读取 setup.md、plan.md、results/index.md 和运行记录，判断当前处于 A/B/C/D 哪一阶段，再请用户确认。"
+    else:
+        heading = "实验进度"
+        stages = [
+            "A. hypothesis-to-plan：假设、baseline、变量、实验矩阵和验收标准",
+            "B. plan-to-code：代码实现与最小测试/烟测",
+            "C. run-monitor-analyze：全量运行、分析、结果回流",
+            "D. result-to-claim：判断结果支持/不支持什么 claim，决定下一轮动作",
+        ]
+        next_step = "让 reproduce agent 读取 plan.md、results/index.md 和运行记录，判断当前处于 A/B/C/D 哪一阶段，再请用户确认。"
+    existing = [name for name in ("setup.md", "plan.md", "sync.yaml", "results/index.md", "results.md")
+                if (ws / name).exists()]
+    stage_lines = "\n".join(f"- [ ] {s}（待判定）" for s in stages)
+    confirm_lines = "\n".join(f"- {letter} 完成：待确认" for letter in ("A", "B", "C", "D"))
+    return f"""# {heading}：{title}
+
+> 由 `helix migrate` 为旧工作区补建。CLI 只做确定性迁移，不判断当前阶段；阶段需要 agent 分析后由用户确认。
+
+## 当前阶段
+待判定
+
+## 阶段清单
+{stage_lines}
+
+## 用户确认记录
+{confirm_lines}
+
+## 迁移线索
+- kind：{kind}
+- 已有文件：{", ".join(existing) if existing else "暂无"}
+
+## 当前阻塞
+待判定
+
+## 下一步
+{next_step}
+
+## 运行记录
+<!-- agent: 每轮记录改动摘要、启动命令、tmux 会话名、远程路径、开始/结束时间、commit 或快照摘要。 -->
+"""
+
+
+def _ensure_progress_files(cfg: Config, report: MigrateReport, logs: list[str]) -> None:
+    """Create PROGRESS.md for existing workspaces that predate progress tracking."""
+    root = cfg.experiments_path
+    for ws in _experiment_workspaces(root):
+        progress = ws / "PROGRESS.md"
+        if progress.exists():
+            continue
+        kind = _workspace_kind(ws)
+        progress.write_text(_migration_progress_skeleton(ws, kind), encoding="utf-8")
+        rel = _workspace_rel(root, ws)
+        report.progress_created.append(rel)
+        logs.append(f"进度补建：{rel}/PROGRESS.md（当前阶段待判定，需 agent 建议 + 用户确认）")
+
+
+def _ensure_progress_in_sync_push(cfg: Config, report: MigrateReport, logs: list[str]) -> None:
+    """Ensure existing sync.yaml files push PROGRESS.md to the remote agent view."""
+    root = cfg.experiments_path
+    if not root.exists():
+        return
+    for sync_file in root.rglob("sync.yaml"):
+        try:
+            data = yaml.safe_load(sync_file.read_text(encoding="utf-8")) or {}
+        except yaml.YAMLError:
+            continue
+        if not isinstance(data, dict):
+            continue
+        push = data.get("push") or []
+        if not isinstance(push, list) or "PROGRESS.md" in push:
+            continue
+        if "plan.md" in push:
+            push.insert(push.index("plan.md"), "PROGRESS.md")
+        else:
+            push.append("PROGRESS.md")
+        data["push"] = push
+        sync_file.write_text(yaml.safe_dump(data, allow_unicode=True, sort_keys=False,
+                                            default_flow_style=False), encoding="utf-8")
+        ws = sync_file.parent
+        rel = _workspace_rel(root, ws)
+        report.sync_push_upgraded.append(rel)
+        logs.append(f"同步清单升级：{rel}/sync.yaml push 加入 PROGRESS.md")
+
+
 def _move_into_workspace(src: Path, dst: Path, label: str, report: MigrateReport, logs: list[str]) -> None:
     """Copy a user-content dir (notes/experiments/draft) src -> dst, verify file count, then delete src.
 
@@ -432,6 +562,8 @@ def run_migrate(cfg: Config, scope: str = "project", *, do_move: bool = False) -
     _migrate_to_workspace(cfg, report, logs, do_move)
     _migrate_repro_dir(cfg, report, logs, do_move)      # legacy repro/ -> experiments/ (now under workspace)
     _upgrade_results_files(cfg, report, logs)           # results.md -> results/index.md
+    _ensure_progress_files(cfg, report, logs)           # old workspaces get user-confirmed progress tracking
+    _ensure_progress_in_sync_push(cfg, report, logs)     # remote agent receives PROGRESS.md
 
     # Persist state (record current lock hash so the next migrate can detect changes).
     state["lock_hash"] = lock_hash

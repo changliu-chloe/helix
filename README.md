@@ -88,7 +88,7 @@ git pull
 uv run helix migrate     # 幂等：重链新 skill、清失效软链，并提示还需手动做什么
 ```
 
-`migrate` 会把 config 缺的新字段**按模板补进你的 `config.yaml`**（连注释、空占位一起追加到末尾；写前先备份 `config.yaml.bak`，只追加不动你现有内容，幂等），你只需填值。依赖有变化提示你 `uv sync --extra dev`（不自动装），笔记比索引新提示你 `index build`（不自动重建）。按它列出的「需手动处理」逐条做即可。
+`migrate` 会把 config 缺的新字段**按模板补进你的 `config.yaml`**（连注释、空占位一起追加到末尾；写前先备份 `config.yaml.bak`，只追加不动你现有内容，幂等），你只需填值。它也会给旧实验工作区补 `PROGRESS.md`（阶段标「待判定」，由 agent 分析后请你确认）。依赖有变化提示你 `uv sync --extra dev`（不自动装），笔记比索引新提示你 `index build`（不自动重建）。按它列出的「需手动处理」逐条做即可。
 
 ## 快速开始
 
@@ -104,7 +104,7 @@ uv run helix search "vision language action" --top-n 5   # 检索并打分
 | 命令 | 说明 | 状态 |
 |---|---|---|
 | `helix init` | 软链 skills 到 .claude/skills + .agents/skills、AGENTS.md→CLAUDE.md，启用自然语言触发（首次搭建） | ✅ |
-| `helix migrate` | `git pull` 后追平：重链新 skill（含 .agents / AGENTS.md）、清失效软链、按模板补 config 缺失字段（备份+追加）、提示依赖/索引更新 | ✅ |
+| `helix migrate` | `git pull` 后追平：重链新 skill（含 .agents / AGENTS.md）、清失效软链、按模板补 config 缺失字段（备份+追加）、给旧实验补 PROGRESS.md、提示依赖/索引更新 | ✅ |
 | `helix status` | 配置/库/索引状态 | ✅ |
 | `helix search "<query>"` | 检索 + 4维打分（arxiv/s2/dblp 多源合并去重） | ✅ |
 | `helix note new <id>` | 抓论文生成深读笔记骨架（文件用短名） | ✅ |
@@ -115,7 +115,7 @@ uv run helix search "vision language action" --top-n 5   # 检索并打分
 | `helix index search "<q>"` | 本地全文检索（bm25 + snippet） | ✅ |
 | `helix fetch <id>` | 抓全文（MinerU）+ 高清图（源码包）到 assets/ | ✅ |
 | `helix exp vram --params <B>` | 显存估算 + 对各硬件档判级（装得下/量化/多卡TP/offload） | ✅ |
-| `helix exp new <笔记\|id>` | 建复现工作区骨架（setup+plan+results/+RESULTS_LAYOUT+sync.yaml；含 agent_view 非敏感运行视图），`--draft` 落 draft_notes | ✅ |
+| `helix exp new <笔记\|id>` | 建复现工作区骨架（setup+plan+PROGRESS+results/+RESULTS_LAYOUT+sync.yaml；含 agent_view 非敏感运行视图），`--draft` 落 draft_notes | ✅ |
 | `helix exp new --mine "<实验名>"` | 建我自己的实验工作区（type:mine，无 setup.md，plan.md 即实验设计） | ✅ |
 | `helix exp push/pull <工作区>` | 本地↔远程 GPU 传送带（scp 封装，跨平台；首次需 `--remote-path` 确认远程路径；`--dry-run` 预览；结果只回流 results/） | ✅ |
 | `helix exp start <工作区>` | 开始实验：可选 git 提交本轮改动（`git.enabled=true` 时）+ push 代码上远程；默认只 push、不碰 git | ✅ |

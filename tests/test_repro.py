@@ -94,9 +94,10 @@ class TestWorkspaceSkeleton(unittest.TestCase):
             )
             self.assertEqual(
                 set(created),
-                {"setup.md", "plan.md", "results/index.md", "RESULTS_LAYOUT.md", "sync.yaml"},
+                {"setup.md", "plan.md", "PROGRESS.md", "results/index.md", "RESULTS_LAYOUT.md", "sync.yaml"},
             )
             self.assertTrue((ws / "setup.md").exists())
+            self.assertTrue((ws / "PROGRESS.md").exists())
             self.assertTrue((ws / "results" / "index.md").exists())
             self.assertTrue((ws / "RESULTS_LAYOUT.md").exists())
             self.assertIn("experiments", str(ws))
@@ -104,6 +105,55 @@ class TestWorkspaceSkeleton(unittest.TestCase):
             from helix import frontmatter
             fm = frontmatter.meta((ws / "results" / "index.md").read_text(encoding="utf-8"))
             self.assertEqual(fm.get("type"), "repro")
+
+    def test_repro_skeleton_has_paper_to_code_prompts(self):
+        with tempfile.TemporaryDirectory() as d:
+            cfg = Config(_path=Path(d) / "config.yaml")
+            ws, _ = repro.build_experiment_workspace(
+                "Test Paper", "papers/X/Test", "X", "test", cfg, kind="repro",
+            )
+            setup = (ws / "setup.md").read_text(encoding="utf-8")
+            plan = (ws / "plan.md").read_text(encoding="utf-8")
+
+            for phrase in (
+                "论文结构与方法拆解",
+                "原文算法 / 公式 / 训练过程",
+                "paper structure map",
+                "method decomposition",
+                "论文未给出/推断/需要用户确认",
+            ):
+                self.assertIn(phrase, setup)
+
+            for phrase in (
+                "setup-to-plan",
+                "file_structure",
+                "implementation_components",
+                "validation_approach",
+                "environment_setup",
+                "implementation_strategy",
+                "实现组件与文件结构",
+                "先烟测、再全量",
+            ):
+                self.assertIn(phrase, plan)
+
+    def test_progress_skeleton_tracks_user_confirmed_stages(self):
+        with tempfile.TemporaryDirectory() as d:
+            cfg = Config(_path=Path(d) / "config.yaml")
+            ws, _ = repro.build_experiment_workspace(
+                "Test Paper", "papers/X/Test", "X", "test", cfg, kind="repro",
+            )
+            progress = (ws / "PROGRESS.md").read_text(encoding="utf-8")
+            for phrase in (
+                "阶段完成权归用户",
+                "## 当前阶段",
+                "A. paper-to-setup",
+                "## 用户确认记录",
+                "A 完成：待确认",
+                "## 当前阻塞",
+                "## 下一步",
+                "## 运行记录",
+            ):
+                self.assertIn(phrase, progress)
 
     def test_mine_has_no_setup(self):
         with tempfile.TemporaryDirectory() as d:
@@ -114,9 +164,59 @@ class TestWorkspaceSkeleton(unittest.TestCase):
             self.assertNotIn("setup.md", created)
             self.assertFalse((ws / "setup.md").exists())
             self.assertIn("plan.md", created)
+            self.assertIn("PROGRESS.md", created)
             from helix import frontmatter
             fm = frontmatter.meta((ws / "results" / "index.md").read_text(encoding="utf-8"))
             self.assertEqual(fm.get("type"), "mine")
+
+    def test_mine_plan_has_implementation_plan_prompts(self):
+        with tempfile.TemporaryDirectory() as d:
+            cfg = Config(_path=Path(d) / "config.yaml")
+            ws, _ = repro.build_experiment_workspace(
+                "我的对比实验", "papers/X/Base", "X", "my-exp", cfg, kind="mine",
+            )
+            plan = (ws / "plan.md").read_text(encoding="utf-8")
+            results = (ws / "results" / "index.md").read_text(encoding="utf-8")
+            for phrase in (
+                "hypothesis-to-plan",
+                "方法、baseline 与实验矩阵",
+                "baseline",
+                "variables",
+                "experiment_matrix",
+                "file_structure",
+                "implementation_components",
+                "validation_approach",
+                "environment_setup",
+                "implementation_strategy",
+                "结果到 claim / 下一轮决策",
+                "result-to-claim",
+            ):
+                self.assertIn(phrase, plan)
+            self.assertIn("结果支持的 claim / 下一轮动作", results)
+            self.assertIn("supported_claim", results)
+            self.assertIn("unsupported_claim", results)
+            self.assertIn("与预期 / baseline 的对比", results)
+            self.assertIn("实验过程中暴露的问题", results)
+            self.assertNotIn("精读时没发现的问题", results)
+
+    def test_mine_progress_uses_hypothesis_flow(self):
+        with tempfile.TemporaryDirectory() as d:
+            cfg = Config(_path=Path(d) / "config.yaml")
+            ws, _ = repro.build_experiment_workspace(
+                "我的对比实验", "papers/X/Base", "X", "my-exp", cfg, kind="mine",
+            )
+            progress = (ws / "PROGRESS.md").read_text(encoding="utf-8")
+            for phrase in (
+                "# 实验进度",
+                "A. hypothesis-to-plan",
+                "B. plan-to-code",
+                "C. run-monitor-analyze",
+                "D. result-to-claim",
+                "不生成 setup.md",
+                "hypothesis、baseline、变量、实验矩阵",
+            ):
+                self.assertIn(phrase, progress)
+            self.assertNotIn("paper-to-setup：我的实验无原文", progress)
 
     def test_bad_kind_raises(self):
         with tempfile.TemporaryDirectory() as d:
@@ -131,6 +231,7 @@ class TestWorkspaceSkeleton(unittest.TestCase):
             import yaml as _yaml
             spec = _yaml.safe_load((ws / "sync.yaml").read_text(encoding="utf-8"))
             self.assertIn("sync.yaml", spec["push"])
+            self.assertIn("PROGRESS.md", spec["push"])
             self.assertIn("RESULTS_LAYOUT.md", spec["push"])
             self.assertTrue(all(p.startswith("results/") for p in spec["pull"]))
             self.assertIn("agent_view", spec)
