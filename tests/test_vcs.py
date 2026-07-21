@@ -49,5 +49,43 @@ class TestVcs(unittest.TestCase):
             vcs.commit_round(self.repo, "empty")
 
 
+class TestWorkspaceRepoInit(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.ws = Path(self.tmp.name)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_ensure_repo_initializes_once(self):
+        self.assertFalse(vcs.is_git_repo(self.ws))
+        self.assertTrue(vcs.ensure_repo(self.ws))
+        self.assertTrue(vcs.is_git_repo(self.ws))
+        self.assertFalse(vcs.ensure_repo(self.ws))
+
+    def test_set_identity_is_repo_local(self):
+        vcs.ensure_repo(self.ws)
+        vcs.set_identity(self.ws, "exp bot", "exp@example.com")
+        name = subprocess.run(
+            ["git", "-C", str(self.ws), "config", "--local", "--get", "user.name"],
+            check=True, capture_output=True, text=True,
+        ).stdout.strip()
+        email = subprocess.run(
+            ["git", "-C", str(self.ws), "config", "--local", "--get", "user.email"],
+            check=True, capture_output=True, text=True,
+        ).stdout.strip()
+        self.assertEqual(name, "exp bot")
+        self.assertEqual(email, "exp@example.com")
+
+    def test_new_workspace_can_commit_first_round(self):
+        (self.ws / "plan.md").write_text("plan", encoding="utf-8")
+        vcs.ensure_repo(self.ws)
+        vcs.set_identity(self.ws, "exp bot", "exp@example.com")
+        self.assertFalse(vcs.is_clean(self.ws))
+        commit = vcs.commit_round(self.ws, "feat: first round")
+        self.assertTrue(commit)
+        self.assertTrue(vcs.is_clean(self.ws))
+
+
 if __name__ == "__main__":
     unittest.main()

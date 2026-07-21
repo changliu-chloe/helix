@@ -85,3 +85,12 @@ remotes:
     ssh_key: ''                        # 可选 identity 文件路径，留空用默认 key / agent
     remote_repro_root: /data/helix-experiments   # 远程实验根目录
     hardware_profile: a100-8x40g       # 这台机对应上面哪个硬件档（复用判级）
+
+# 可选：用 git 管理实验代码版本。开启后 `helix exp start` 把每个实验工作区当独立 git 仓库
+# （一实验一仓库，与 sync.yaml 同目录）：需要就 git init、用下面的身份写进该仓库 .git/config、
+# 提交本轮改动，再传到远程跑。提交信息由 agent 按约定式风格给（如 "feat: xxx"，带类型前缀）。
+# 关闭（默认）则 exp start 只 push、不碰 git。身份只写仓库级 .git/config，不动你的 ~/.gitconfig。
+git:
+  enabled: false                       # true 才启用；默认关
+  name: ''                             # 提交作者名（开启时必填）
+  email: ''                            # 提交作者邮箱（开启时必填）

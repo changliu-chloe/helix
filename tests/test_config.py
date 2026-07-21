@@ -62,5 +62,38 @@ class TestLoadConfigSetsPath(unittest.TestCase):
             self.assertEqual(cfg.notes_path, root / "workspace" / "notes")
 
 
+class TestGitConfig(unittest.TestCase):
+    def test_git_defaults_disabled(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            (root / "config.yaml").write_text("language: zh\n", encoding="utf-8")
+            cfg = load_config(str(root / "config.yaml"))
+            self.assertFalse(cfg.git.enabled)
+            self.assertEqual(cfg.git.name, "")
+            self.assertEqual(cfg.git.email, "")
+
+    def test_git_config_loaded(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            (root / "config.yaml").write_text(
+                "git:\n"
+                "  enabled: true\n"
+                "  name: exp bot\n"
+                "  email: exp@example.com\n",
+                encoding="utf-8",
+            )
+            cfg = load_config(str(root / "config.yaml"))
+            self.assertTrue(cfg.git.enabled)
+            self.assertEqual(cfg.git.name, "exp bot")
+            self.assertEqual(cfg.git.email, "exp@example.com")
+
+    def test_quoted_false_stays_disabled(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            (root / "config.yaml").write_text('git:\n  enabled: "false"\n', encoding="utf-8")
+            cfg = load_config(str(root / "config.yaml"))
+            self.assertFalse(cfg.git.enabled)
+
+
 if __name__ == "__main__":
     unittest.main()

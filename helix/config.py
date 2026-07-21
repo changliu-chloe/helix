@@ -21,6 +21,17 @@ class Domain:
 
 
 @dataclass
+class GitConfig:
+    """Optional git management of experiment workspaces. When enabled, `exp start` treats each experiment
+    workspace as its own git repo (init if needed), sets identity into its .git/config, and commits the
+    round before pushing. Disabled by default -> `exp start` only pushes, never touches git."""
+
+    enabled: bool = False
+    name: str = ""                  # commit author name (written to the workspace repo's .git/config)
+    email: str = ""                 # commit author email
+
+
+@dataclass
 class HardwareProfile:
     """Hardware profile of one machine/class for reproduction. The repro plan uses this to judge whether a model fits."""
 
@@ -97,6 +108,7 @@ class Config:
     domains: list[Domain] = field(default_factory=list)
     hardware_profiles: list[HardwareProfile] = field(default_factory=list)
     remotes: list[Remote] = field(default_factory=list)
+    git: GitConfig = field(default_factory=GitConfig)
     _path: Path | None = None
 
     @property
@@ -192,6 +204,23 @@ class Config:
         return seen
 
 
+def _as_bool(value: Any, default: bool = False) -> bool:
+    """Parse config booleans defensively; quoted "false" should not become True."""
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return default
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str):
+        v = value.strip().lower()
+        if v in {"1", "true", "yes", "y", "on"}:
+            return True
+        if v in {"0", "false", "no", "n", "off", ""}:
+            return False
+    return default
+
+
 def find_config(explicit: str | None = None) -> Path:
     """Locate config.yaml: explicit path > HELIX_CONFIG env var > search upward from cwd."""
     if explicit:
@@ -261,6 +290,13 @@ def load_config(path: str | None = None) -> Config:
     # only the new name. Clean over backward-compatible.
     experiments_dir = raw.get("experiments_dir") or "experiments"
 
+    git_spec = raw.get("git") or {}
+    git_cfg = GitConfig(
+        enabled=_as_bool(git_spec.get("enabled", False)),
+        name=str(git_spec.get("name", "") or ""),
+        email=str(git_spec.get("email", "") or ""),
+    )
+
     return Config(
         language=raw.get("language", "zh"),
         workspace_dir=raw.get("workspace_dir", "workspace") or "workspace",
@@ -278,5 +314,6 @@ def load_config(path: str | None = None) -> Config:
         domains=domains,
         hardware_profiles=profiles,
         remotes=remotes,
+        git=git_cfg,
         _path=cfg_path,
     )

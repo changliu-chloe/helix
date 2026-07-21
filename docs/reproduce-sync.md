@@ -164,7 +164,7 @@ CLI 代理——agent 只调 `helix exp run`，永远看不到明文。所以这
 
 ### 5.2 分工：CLI 做原子操作，agent 做编排判断
 
-- **CLI（确定性、接触凭据/远程）**：`exp start`（git 提交本轮 + push）、`exp run`（远程 tmux 跑命令）、
+- **CLI（确定性、接触凭据/远程）**：`exp start`（可选 git 提交本轮 + push）、`exp run`（远程 tmux 跑命令）、
   `exp probe`（探磁盘/GPU）、`exp sessions`/`exp kill`（会话管理）、`exp push/pull`（传输）。
 - **agent（判断、编排）**：装什么环境、烟测通没通、跑不跑全量、时长多久、会话留不留。这些 CLI 不硬编码。
 - **tmux 开在远程**：会话在远程机器上，ssh 断开实验不断，长实验可脱机——启动后 agent 直接结束会话不轮询，
@@ -179,10 +179,18 @@ CLI 代理——agent 只调 `helix exp run`，永远看不到明文。所以这
 - 优先 SSH key 免密——则 secrets 文件整个可留空，安全性最高；密码是兜底。
 - 命令一律 argv list + 无 `shell=True`（延续 sync.py 范式，防注入）。
 
-### 5.4 每轮版本可追溯
+### 5.4 每轮版本可追溯（可选 git）
 
-「一轮」= 上次实验结束到本次开始之间的改动。`exp start` 先检查工作区 git 状态，脏则自动 commit 本轮、
-再 push，保证**远程跑的代码 == 本地某个 commit**，实验结果可回溯到确切版本。
+「一轮」= 上次实验结束到本次开始之间的改动。**可选**功能，config 开 `git.enabled=true` + 填 name/email 才启用：
+
+- **一实验一仓库**：git 管的是**实验工作区**（sync.yaml 同目录，`workspace/experiments/<方向>/<短名>/`），
+  每个实验独立 git 仓库——不是整个 helix checkout（提交 base_dir 会把源码和所有实验混在一起，粒度错）。
+- `exp start` 流程：需要则 `git init` 工作区 → 把 config 的 name/email 写进该仓库 `.git/config`（仓库级，
+  不动 `~/.gitconfig`）→ 脏则 commit 本轮 → scp push。保证**远程跑的代码 == 刚提交的 commit**。
+- **提交信息 = 约定式提交**：`<type>: <摘要>`，type ∈ {feat, fix, chore, refactor, docs, test, perf}。
+  类型判断是 LLM 的活（CLI 看不懂 diff 语义）：agent 看本轮 diff 判类型、拼 message，经 `exp start -m` 传入；
+  CLI 只原样提交。省略 `-m` 用朴素兜底默认并提示。
+- **关闭（默认）**：`exp start` 跳过全部 git，只 scp push，零 git 副作用。
 
 ### 5.5 传输用 scp（跨平台），护栏如何保留
 

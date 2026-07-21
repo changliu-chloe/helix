@@ -606,22 +606,38 @@ def _cmd_exp_transfer(args, cfg, ws) -> int:
 
 
 def _cmd_exp_start(args, cfg, ws, remote) -> int:
-    """Start a round: enforce a clean tree (auto-commit if dirty), push to remote, report the commit."""
+    """Start a round: (optional git) commit this round in the experiment workspace repo, then push to remote.
+
+    git enabled -> the workspace (ws, where sync.yaml lives) is its own repo: init if needed, set identity
+    from config, commit the round (message from --message, agent supplies `<type>: ...`), then push.
+    git disabled (default) -> skip git entirely, just push.
+    """
     from . import sync as sync_mod
     from . import vcs as vcs_mod
 
-    repo = cfg.base_dir
-    try:
-        if not vcs_mod.is_clean(repo):
-            msg = args.message or "实验轮次：本地改动"
-            commit = vcs_mod.commit_round(repo, msg)
-            print(f"[helix] 本轮改动已提交：{commit} — {msg}", file=sys.stderr)
-        else:
-            commit = vcs_mod.current_commit(repo)
-            print(f"[helix] 工作区干净，当前提交：{commit}", file=sys.stderr)
-    except (FileNotFoundError, RuntimeError) as e:
-        print(f"[helix] git 步骤失败：{e}", file=sys.stderr)
-        return 1
+    commit = ""
+    if cfg.git.enabled:
+        if not cfg.git.name or not cfg.git.email:
+            print("[helix] git 已开启但 config 的 git.name/git.email 为空，请补全（用于提交身份）", file=sys.stderr)
+            return 1
+        try:
+            if vcs_mod.ensure_repo(ws):
+                print(f"[helix] 已 git init 实验工作区：{ws}", file=sys.stderr)
+            vcs_mod.set_identity(ws, cfg.git.name, cfg.git.email)
+            if not vcs_mod.is_clean(ws):
+                msg = args.message or "实验轮次：本地改动"
+                if not args.message:
+                    print("[helix] ⚠ 未给 -m，用了朴素默认提交信息；建议带类型前缀，如 -m \"feat: ...\"", file=sys.stderr)
+                commit = vcs_mod.commit_round(ws, msg)
+                print(f"[helix] 本轮已提交：{commit} — {msg}", file=sys.stderr)
+            else:
+                commit = vcs_mod.current_commit(ws)
+                print(f"[helix] 工作区干净，当前提交：{commit}", file=sys.stderr)
+        except (FileNotFoundError, RuntimeError) as e:
+            print(f"[helix] git 步骤失败：{e}", file=sys.stderr)
+            return 1
+    else:
+        print("[helix] git 未开启（config git.enabled=false），跳过提交，仅 push", file=sys.stderr)
 
     try:
         res = sync_mod.push(cfg, ws, dry_run=args.dry_run)
@@ -630,10 +646,11 @@ def _cmd_exp_start(args, cfg, ws, remote) -> int:
         return 1
     for w in res.warnings:
         print(f"[helix] ⚠ {w}", file=sys.stderr)
-    out = {"commit": commit, "remote": res.remote_name, "remote_dir": res.remote_dir, "dry_run": res.dry_run}
+    out = {"commit": commit or None, "remote": res.remote_name, "remote_dir": res.remote_dir, "dry_run": res.dry_run}
     print(json.dumps(out, ensure_ascii=False, indent=2))
     tag = "（dry-run，未实际传输）" if res.dry_run else ""
-    print(f"[helix] 开始实验：代码 {commit} 已推到 {res.remote_name}:{res.remote_dir} {tag}", file=sys.stderr)
+    code_desc = f"代码 {commit}" if commit else "代码（未启用 git）"
+    print(f"[helix] 开始实验：{code_desc} 已推到 {res.remote_name}:{res.remote_dir} {tag}", file=sys.stderr)
     print("[helix] 下一步：uv run helix exp run <工作区> --cmd \"<跑实验命令>\" --session <名>", file=sys.stderr)
     return 0 if res.returncode == 0 else 1
 

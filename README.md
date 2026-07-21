@@ -118,7 +118,7 @@ uv run helix search "vision language action" --top-n 5   # 检索并打分
 | `helix exp new <笔记\|id>` | 建复现工作区骨架（setup+plan+results/+RESULTS_LAYOUT+sync.yaml），`--draft` 落 draft_notes | ✅ |
 | `helix exp new --mine "<实验名>"` | 建我自己的实验工作区（type:mine，无 setup.md，plan.md 即实验设计） | ✅ |
 | `helix exp push/pull <工作区>` | 本地↔远程 GPU 传送带（scp 封装，跨平台；首次需 `--remote-path` 确认远程路径；`--dry-run` 预览；结果只回流 results/） | ✅ |
-| `helix exp start <工作区>` | 开始实验：git 提交本轮改动 + push 代码上远程（远程代码=本地某 commit） | ✅ |
+| `helix exp start <工作区>` | 开始实验：可选 git 提交本轮改动（`git.enabled=true` 时）+ push 代码上远程；默认只 push、不碰 git | ✅ |
 | `helix exp run <工作区> --cmd "..."` | 在远程 tmux 会话里跑命令（`--oneshot` 跑完退会话，`--sudo` 需提权，`--session` 指定会话名） | ✅ |
 | `helix exp probe <工作区>` | 探远程磁盘/GPU 占用（JSON），跑实验前判断条件 | ✅ |
 | `helix exp sessions/kill <工作区>` | 列 / 杀远程 tmux 会话 | ✅ |
@@ -151,6 +151,8 @@ agent 负责需要 LLM 的深读与总结：
 - `semantic_scholar_api_key`：S2 API key（匿名接口限流严重，强烈建议填）
 - `reviewer_model`：文献综述/深读时经 Codex MCP 调的独立评审模型（默认 `gpt-5.6-sol`，须为 OpenAI 模型）
 - `review_funnel_top_n`：方向检索做综述时，摘要粗筛后取前 N 篇进精读（默认 10，可调）
+- `remotes`：远程 GPU 机器册，供 `exp start/run/probe/push/pull` 使用；敏感凭据放 `config.secrets.yaml`
+- `git`：可选实验代码版本管理；`enabled=true` 时 `exp start` 把单个实验工作区当独立 git 仓库提交本轮改动，默认关闭
 
 > **两种打分别混**：检索时的四维分（relevance/recency/popularity/quality，摘要+关键词，便宜）只用来
 > 排序候选、做综述漏斗的宽口粗筛；综述/深读的三维分（相关性/创新性/可靠性，全文+独立评审模型）是精读后的

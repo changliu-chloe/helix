@@ -1,8 +1,10 @@
-"""Git guardrails for the experiment belt: ensure remote code == a known local commit.
+"""Optional git management of experiment workspaces: ensure remote code == a known local commit.
 
-"Every round" = the changes between the end of the last experiment and the start of this one. When the
-user says "start the experiment", helix commits the round and pushes, so each experiment maps to one
-commit and results are traceable to an exact version.
+Each experiment workspace (where sync.yaml lives) is its own git repo. When the git block is enabled and
+the user says "start the experiment" (exp start), helix inits the workspace repo if needed, sets identity
+(from config, into the repo's own .git/config — never ~/.gitconfig), commits the round, then pushes. So
+each experiment maps to one commit, traceable to an exact version. "Every round" = the changes between the
+end of the last experiment and the start of this one. Disabled by default -> exp start only pushes.
 """
 
 from __future__ import annotations
@@ -19,6 +21,29 @@ def _git(repo_dir: Path, *args: str, timeout: int = 30) -> subprocess.CompletedP
         ["git", "-C", str(repo_dir), *args],
         capture_output=True, text=True, timeout=timeout,
     )
+
+
+def is_git_repo(repo_dir: Path) -> bool:
+    """True if repo_dir is the top of a git work tree (has its own .git)."""
+    return (repo_dir / ".git").exists()
+
+
+def ensure_repo(repo_dir: Path) -> bool:
+    """git init repo_dir if it isn't already a repo (idempotent). Returns True if a new repo was created."""
+    if is_git_repo(repo_dir):
+        return False
+    proc = _git(repo_dir, "init")
+    if proc.returncode != 0:
+        raise RuntimeError(f"git init 失败：{proc.stderr.strip()}")
+    return True
+
+
+def set_identity(repo_dir: Path, name: str, email: str) -> None:
+    """Set commit identity local to this repo (writes repo/.git/config; never touches ~/.gitconfig)."""
+    for key, val in (("user.name", name), ("user.email", email)):
+        proc = _git(repo_dir, "config", key, val)
+        if proc.returncode != 0:
+            raise RuntimeError(f"git config {key} 失败：{proc.stderr.strip()}")
 
 
 def is_clean(repo_dir: Path) -> bool:
