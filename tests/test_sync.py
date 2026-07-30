@@ -175,6 +175,21 @@ class TestPushPull(unittest.TestCase):
         self.assertNotIn("index.md", joined)
         self.assertTrue((ws / "results" / "metrics").is_dir())  # local landing spot created
 
+    def test_pull_fetches_local_sub_experiment_result_subdirs(self):
+        ws = _mk_workspace(self.root, "gpu-a100", ["plan.md"], ["results/metrics/**"],
+                           remote_path="/data/exp/domX/paperY")
+        (ws / "sub_experiments" / "01_smoke" / "results").mkdir(parents=True)
+        with mock.patch.object(sync, "_run", return_value=0) as run:
+            sync.pull(self.cfg, ws, dry_run=False)
+        cmds = [c[0][0] for c in run.call_args_list]
+        srcs = " ".join(c[-2] for c in cmds)
+        dests = " ".join(c[-1] for c in cmds)
+        self.assertIn("sub_experiments/01_smoke/results/metrics", srcs)
+        self.assertIn("sub_experiments/01_smoke/results/plots", srcs)
+        self.assertIn("sub_experiments/01_smoke/results/tables", srcs)
+        self.assertIn("sub_experiments/01_smoke/results/", dests)
+        self.assertTrue((ws / "sub_experiments" / "01_smoke" / "results" / "metrics").is_dir())
+
     def test_pull_unconfirmed_raises(self):
         ws = _mk_workspace(self.root, "gpu-a100", ["plan.md"], ["results/metrics/**"])
         with self.assertRaises(sync.RemotePathUnset):

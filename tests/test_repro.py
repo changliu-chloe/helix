@@ -165,6 +165,8 @@ class TestWorkspaceSkeleton(unittest.TestCase):
             self.assertFalse((ws / "setup.md").exists())
             self.assertIn("plan.md", created)
             self.assertIn("PROGRESS.md", created)
+            self.assertIn("sub_experiments/README.md", created)
+            self.assertTrue((ws / "sub_experiments" / "README.md").exists())
             from helix import frontmatter
             fm = frontmatter.meta((ws / "results" / "index.md").read_text(encoding="utf-8"))
             self.assertEqual(fm.get("type"), "mine")
@@ -179,15 +181,13 @@ class TestWorkspaceSkeleton(unittest.TestCase):
             results = (ws / "results" / "index.md").read_text(encoding="utf-8")
             for phrase in (
                 "hypothesis-to-plan",
-                "方法、baseline 与实验矩阵",
+                "实验方向",
+                "总假设",
+                "总体方法边界",
+                "可用能力与生成方式",
+                "子实验索引",
+                "sub_experiments/<slug>/",
                 "baseline",
-                "variables",
-                "experiment_matrix",
-                "file_structure",
-                "implementation_components",
-                "validation_approach",
-                "environment_setup",
-                "implementation_strategy",
                 "结果到 claim / 下一轮决策",
                 "result-to-claim",
             ):
@@ -196,8 +196,81 @@ class TestWorkspaceSkeleton(unittest.TestCase):
             self.assertIn("supported_claim", results)
             self.assertIn("unsupported_claim", results)
             self.assertIn("与预期 / baseline 的对比", results)
-            self.assertIn("实验过程中暴露的问题", results)
+            self.assertIn("跨子实验暴露的问题", results)
             self.assertNotIn("精读时没发现的问题", results)
+
+    def test_build_sub_experiment_creates_isolated_setup_config_results(self):
+        with tempfile.TemporaryDirectory() as d:
+            cfg = Config(_path=Path(d) / "config.yaml")
+            ws, _ = repro.build_experiment_workspace(
+                "我的对比实验", "papers/X/Base", "X", "my-exp", cfg, kind="mine",
+            )
+            sub, created = repro.build_sub_experiment(ws, "01 smoke baseline")
+            self.assertEqual(sub.name, "01_smoke_baseline")
+            self.assertIn("sub_experiments/01_smoke_baseline/setup.md", created)
+            self.assertIn("sub_experiments/01_smoke_baseline/config.yaml", created)
+            self.assertIn("sub_experiments/01_smoke_baseline/results/index.md", created)
+            self.assertTrue((sub / "results" / "metrics" / ".gitkeep").exists())
+            setup = (sub / "setup.md").read_text(encoding="utf-8")
+            config = (sub / "config.yaml").read_text(encoding="utf-8")
+            results = (sub / "results" / "index.md").read_text(encoding="utf-8")
+            self.assertIn("用户需求 / 触发问题", setup)
+            self.assertIn("generated_by", config)
+            self.assertIn("scope: sub_experiment", results)
+
+    def test_cleanup_transient_artifacts_previews_without_deleting(self):
+        with tempfile.TemporaryDirectory() as d:
+            cfg = Config(_path=Path(d) / "config.yaml")
+            ws, _ = repro.build_experiment_workspace(
+                "我的对比实验", "papers/X/Base", "X", "my-exp", cfg, kind="mine",
+            )
+            sub, _ = repro.build_sub_experiment(ws, "01 smoke baseline")
+            smoke = sub / "results" / "metrics" / "smoke_latency.json"
+            official = sub / "results" / "metrics" / "full_latency.json"
+            smoke.write_text("{}", encoding="utf-8")
+            official.write_text("{}", encoding="utf-8")
+
+            result = repro.cleanup_transient_artifacts(sub)
+            self.assertTrue(result.dry_run)
+            self.assertIn("results/metrics/smoke_latency.json", result.candidates)
+            self.assertTrue(smoke.exists())
+            self.assertTrue(official.exists())
+
+    def test_cleanup_transient_artifacts_deletes_only_candidates(self):
+        with tempfile.TemporaryDirectory() as d:
+            cfg = Config(_path=Path(d) / "config.yaml")
+            ws, _ = repro.build_experiment_workspace(
+                "我的对比实验", "papers/X/Base", "X", "my-exp", cfg, kind="mine",
+            )
+            sub, _ = repro.build_sub_experiment(ws, "01 smoke baseline")
+            smoke = sub / "results" / "metrics" / "smoke_latency.json"
+            debug = sub / "results" / "plots" / "debug_curve.png"
+            official = sub / "results" / "metrics" / "full_latency.json"
+            smoke.write_text("{}", encoding="utf-8")
+            debug.write_text("plot", encoding="utf-8")
+            official.write_text("{}", encoding="utf-8")
+
+            result = repro.cleanup_transient_artifacts(sub, yes=True)
+            self.assertFalse(result.dry_run)
+            self.assertIn("results/metrics/smoke_latency.json", result.deleted)
+            self.assertIn("results/plots/debug_curve.png", result.deleted)
+            self.assertFalse(smoke.exists())
+            self.assertFalse(debug.exists())
+            self.assertTrue(official.exists())
+            self.assertTrue((sub / "results" / "index.md").exists())
+
+    def test_cleanup_workspace_includes_sub_experiment_results(self):
+        with tempfile.TemporaryDirectory() as d:
+            cfg = Config(_path=Path(d) / "config.yaml")
+            ws, _ = repro.build_experiment_workspace(
+                "我的对比实验", "papers/X/Base", "X", "my-exp", cfg, kind="mine",
+            )
+            sub, _ = repro.build_sub_experiment(ws, "01 smoke baseline")
+            smoke = sub / "results" / "tables" / "trial_table.csv"
+            smoke.write_text("x", encoding="utf-8")
+
+            result = repro.cleanup_transient_artifacts(ws)
+            self.assertIn("sub_experiments/01_smoke_baseline/results/tables/trial_table.csv", result.candidates)
 
     def test_mine_progress_uses_hypothesis_flow(self):
         with tempfile.TemporaryDirectory() as d:
@@ -212,8 +285,9 @@ class TestWorkspaceSkeleton(unittest.TestCase):
                 "B. plan-to-code",
                 "C. run-monitor-analyze",
                 "D. result-to-claim",
-                "不生成 setup.md",
-                "hypothesis、baseline、变量、实验矩阵",
+                "不生成顶层 setup.md",
+                "sub_experiments/<slug>/setup.md",
+                "方向假设、子实验 setup/config",
             ):
                 self.assertIn(phrase, progress)
             self.assertNotIn("paper-to-setup：我的实验无原文", progress)
@@ -238,6 +312,17 @@ class TestWorkspaceSkeleton(unittest.TestCase):
             self.assertIn("models", spec["agent_view"])
             self.assertIn("datasets", spec["agent_view"])
             self.assertIn("runtime", spec["agent_view"])
+
+    def test_mine_sync_yaml_includes_sub_experiments(self):
+        with tempfile.TemporaryDirectory() as d:
+            cfg = Config(_path=Path(d) / "config.yaml")
+            ws, _ = repro.build_experiment_workspace("T", "n", "X", "t", cfg, kind="mine")
+            import yaml as _yaml
+            spec = _yaml.safe_load((ws / "sync.yaml").read_text(encoding="utf-8"))
+            self.assertIn("sub_experiments/**", spec["push"])
+            self.assertIn("sub_experiments/*/results/metrics/**", spec["pull"])
+            layout = (ws / "RESULTS_LAYOUT.md").read_text(encoding="utf-8")
+            self.assertIn("sub_experiments/<slug>/results/metrics/", layout)
 
     def test_draft_goes_to_draft_notes(self):
         with tempfile.TemporaryDirectory() as d:

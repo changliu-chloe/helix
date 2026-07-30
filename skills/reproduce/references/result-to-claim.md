@@ -4,14 +4,15 @@
 
 ## 输入
 
-- `plan.md` 中的 hypothesis、baseline、指标和验收标准；
-- `results/{metrics,plots,tables}/` 原始结果；
-- `results/index.md` 的结果概览；
+- `plan.md` 中的方向级 hypothesis 和汇总验收口径；
+- 各 `sub_experiments/<slug>/setup.md` 中的 baseline、指标和验收标准；
+- 各 `sub_experiments/<slug>/results/{metrics,plots,tables}/` 原始结果；
+- 各 `sub_experiments/<slug>/results/index.md` 的结果概览；
 - 运行记录、失败日志、异常现象。
 
 ## 输出
 
-- `results/index.md` 中的 claim 判断和下一轮决策；
+- 顶层 `results/index.md` 中跨子实验汇总后的 claim 判断和下一轮决策；
 - `PROGRESS.md` 中本阶段的完成情况和用户确认记录。
 
 ## 判断清单
@@ -27,12 +28,12 @@
 
 - 不能把负结果包装成正结果；
 - 不用单次 seed 或单个数据子集支撑过强 claim；
-- 指标和统计方式必须回到 `plan.md` 的验收标准；
+- 指标和统计方式必须回到对应子实验 `setup.md` 的验收标准，再汇总到顶层 `plan.md` 的 claim 口径；
 - 如果结果只支持缩比趋势，必须写清不能外推到完整设置。
 
 ## 阶段出口
 
-当 `results/index.md` 已写清支持/不支持的 claim、证据强度和下一轮动作后，在 `PROGRESS.md` 写：
+当顶层 `results/index.md` 已基于各子实验写清支持/不支持的 claim、证据强度和下一轮动作后，在 `PROGRESS.md` 写：
 
 - 当前阶段：`D. result-to-claim`；
 - 阶段状态：`建议用户确认`；

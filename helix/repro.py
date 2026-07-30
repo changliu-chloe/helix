@@ -12,6 +12,7 @@ the "executable reproduction plan" layer without auto-generating code.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -31,6 +32,14 @@ DTYPE_BYTES = {
 HEADROOM = 0.10
 # CUDA context / framework resident overhead (GB, per GPU)
 FRAMEWORK_OVERHEAD_GB = 1.5
+
+# Result artifacts with these tokens are treated as transient and can be cleaned at the end of
+# an experiment round. Keep the rule conservative: official result files should use stable names.
+TRANSIENT_ARTIFACT_RE = re.compile(
+    r"(^|[^a-z0-9])(smoke|tmp|temp|trial|dryrun|dry-run|debug|warmup)([^a-z0-9]|$)",
+    re.IGNORECASE,
+)
+PROTECTED_RESULT_FILENAMES = {"index.md", ".gitkeep"}
 
 
 def _dtype_bytes(dtype: str) -> float:
@@ -291,53 +300,192 @@ def build_setup_skeleton(title: str, note_rel: str, cfg: Config) -> str:
 
 
 def build_mine_plan_skeleton(title: str, note_rel: str, cfg: Config) -> str:
-    """Skeleton for my own experiment design (type:mine). plan.md IS the experiment design -- no setup.md,
-    since there's no original paper to transcribe. It references the papers this experiment builds on / compares against.
+    """Skeleton for a user's own experiment direction (type:mine).
+
+    plan.md stays at the direction level. Concrete runs live in sub_experiments/<slug>/ so
+    each user-driven sub-experiment has its own setup, config, and results.
     """
     ref = f"> 对标/借鉴：[[{note_rel}]]\n" if note_rel else ""
-    return f"""# 实验设计：{title}
+    return f"""# 实验方向：{title}
 
-{ref}> 这是我自己的实验（type:mine）。从 hypothesis-to-plan 开始；本文件既是设计也是执行方案，结果落 results/。
+{ref}> 这是我自己的实验（type:mine），从 hypothesis-to-plan 开始。本文件只管大方向、总假设和证据口径；每个具体子实验放到 `sub_experiments/<slug>/`，不要把不同轮次的设置和结果混在顶层。
 
-## 1. 研究问题 / 假设
-<!-- agent: hypothesis：这个实验要验证什么假设/claim、回答什么问题；和对标论文的关系（改进/对比/消融）。
-预期必须可证伪，不能把"我希望成立"写成"结果会成立"。 -->
+## 1. 研究问题 / 总假设
+<!-- agent: hypothesis：这条研究线要验证什么总假设/claim、回答什么问题；和对标论文的关系（改进/对比/消融）。
+预期必须可证伪。具体 baseline、变量、超参和命令写进对应子实验的 setup.md/config.yaml。 -->
 
-## 2. 方法、baseline 与实验矩阵
-<!-- agent: 必须覆盖五类信息：
-- baseline：最小可信 baseline 和可选强 baseline
-- variables：自变量、因变量、控制变量
-- experiment_matrix：主实验、消融、缩比试验、失败判据
-- file_structure：本实验需要的代码/配置/脚本结构
-- implementation_components：核心算法、模型、数据、评测模块如何落到文件
-- validation_approach：烟测、全量实验、预期指标、验收标准
-- environment_setup：uv/conda/容器方案、依赖版本、硬件要求
-- implementation_strategy：分阶段实现顺序、每步测试点、降配策略
-说明相对 baseline 改了什么。 -->
+## 2. 总体方法边界
+<!-- agent: 只写跨子实验都成立的设计约束、不可变控制条件、核心 baseline 候选和验收口径。
+如果某个设置只服务一轮实验，放进 sub_experiments/<slug>/setup.md，不写在这里。 -->
 
-## 3. 硬件与运行方案
+## 3. 可用能力与生成方式
 可用硬件档：
 {_profile_lines(cfg)}
 
-<!-- agent: 用哪台机、精度/并行、显存核对（下面命令跑一下贴结果） -->
+<!-- agent: 子实验设置可以由用户需求触发，也可以调用 helix CLI、相关 skill 或 LLM 生成。
+记录可复用的非敏感上下文：模型/数据/cache 路径、常用评测脚本、允许使用的 skill、禁止变动的环境边界。 -->
+
 ```bash
 uv run helix exp vram --params <B> --dtype <精度> --ctx <长度> --batch <N> [--layers L --hidden H]
+uv run helix exp sub <本工作区> --name "<子实验短名>"
 ```
 
-## 4. 分步执行命令
-<!-- agent: 从建环境到出指标的可复制命令，带上 TP 度/并发等参数 -->
+## 4. 子实验索引
+<!-- agent: 每新增一轮具体实验，先 `helix exp sub ...` 建隔离目录，再把本表补一行。
+不要把旧轮次文件搬进 archive；从一开始就把 setup/config/results 放在对应子实验目录。 -->
+
+| 子实验 | 用户需求 / 问题 | 状态 | 关键结果 | 下一步 |
+|---|---|---|---|---|
+| `sub_experiments/<slug>/` | | planning | | |
+
+## 5. 结果到 claim / 下一轮决策（汇总证据）
+<!-- agent: result-to-claim 的总口径：汇总各子实验 results/index.md 后，判断 supported_claim、
+unsupported_claim、evidence_strength 和 next_action。单轮结果先写在子实验内，顶层 results/index.md 只放汇总。 -->
+"""
+
+
+def build_sub_experiments_readme(title: str) -> str:
+    """Guide for user-driven sub-experiment folders under a type:mine workspace."""
+    return f"""# 子实验目录：{title}
+
+每个具体子实验都新建一个独立目录：
+
+```text
+sub_experiments/<slug>/
+  setup.md        # 本轮用户需求、baseline、变量、命令和验收标准
+  config.yaml     # 本轮结构化配置；可由 CLI / skill / LLM 生成后人工确认
+  results/
+    index.md      # 本轮结果总结
+    metrics/      # 原始指标
+    plots/        # 图
+    tables/       # 表
+```
+
+烟测、调试、临时试跑产物请在文件名或目录名里带 `smoke` / `tmp` / `debug` / `trial` / `dryrun` / `warmup`，
+例如 `results/metrics/smoke_latency.json`。实验结束后先预览再清理：
+
 ```bash
-# 1. 建环境 + 准备代码/数据
-# 2. 跑实验（带参数）
-# 3. 评测出指标，按 RESULTS_LAYOUT.md 落到 results/
+uv run helix exp clean sub_experiments/<slug>
+uv run helix exp clean sub_experiments/<slug> --yes
 ```
 
-## 5. 评测与预期
-<!-- agent: 算什么指标、baseline 对比、预期区间、验收标准；说明哪些结果支持/不支持 hypothesis。 -->
+不要把一轮实验结束后的文件再搬进 archive。新需求来时直接创建新 `<slug>`，让设置、配置和结果从一开始就隔离。
+"""
 
-## 6. 结果到 claim / 下一轮决策
-<!-- agent: result-to-claim 的预设规则：如果结果达到/未达到验收标准，分别支持什么 claim、
-不支持什么 claim，下一步是继续全量、补消融、改方法、换 baseline 还是停止该方向。 -->
+
+def sub_experiment_slug(name: str) -> str:
+    """Filesystem-safe sub-experiment folder name."""
+    from . import naming
+
+    return naming.safe_filename(name, "sub_experiment")
+
+
+def build_sub_experiment_setup_skeleton(title: str, slug: str) -> str:
+    """Skeleton for one concrete user-driven sub-experiment."""
+    return f"""# 子实验设置：{title}
+
+> 所属方向：`../../plan.md` ｜ 配置：`config.yaml` ｜ 结果：`results/index.md`
+
+## 1. 用户需求 / 触发问题
+<!-- agent: 这轮具体要回答什么问题；为什么需要新建子实验而不是复用旧目录。 -->
+
+## 2. 假设、baseline 与变量
+<!-- agent: 写清本轮 hypothesis、baseline、自变量、因变量、控制变量、失败判据。 -->
+
+## 3. 设置生成方式
+<!-- agent: 本轮设置从哪里来：用户指定 / helix CLI / reproduce skill / 其他 skill / LLM 生成。
+若调用 LLM 或 skill 生成配置，记录输入摘要和人工确认点；不要写 secret。 -->
+
+## 4. 实现组件与文件结构
+<!-- agent: 本轮需要改哪些代码、脚本、配置；核心算法/数据/评测模块分别落在哪。 -->
+
+## 5. 硬件、环境与分步命令
+<!-- agent: 从建环境到出指标的可复制命令。先烟测，再全量；长实验写预计时长和 tmux 会话名。 -->
+```bash
+# uv run helix exp vram ...
+# uv run helix exp start ../.. -m "feat: {slug} ..."
+# uv run helix exp run ../.. --cmd "<命令>" --session "helix-{slug}-run"
+```
+
+## 6. 评测与验收标准
+<!-- agent: 指标、baseline 对比、预期区间、通过/失败标准，以及哪些结果支持/不支持本轮假设。 -->
+
+## 7. 收尾清理
+<!-- agent: 实验结束后先整理结果目录。烟测/调试/临时试跑产物命名带 smoke/tmp/debug/trial/dryrun/warmup，
+正式结果用稳定名称。先 `uv run helix exp clean <本子实验目录>` 预览，再经用户确认后加 `--yes` 删除。 -->
+"""
+
+
+def build_sub_experiment_config_skeleton(title: str, slug: str) -> str:
+    """Structured, non-sensitive config template for one sub-experiment."""
+    spec = {
+        "name": slug,
+        "title": title,
+        "status": "planning",
+        "generated_by": {
+            "source": "",  # user | helix-cli | skill | llm | mixed
+            "details": "",
+            "confirmed_by_user": False,
+        },
+        "hypothesis": "",
+        "baseline": [],
+        "variables": {
+            "independent": [],
+            "dependent": [],
+            "controlled": [],
+        },
+        "metrics": [],
+        "datasets": {
+            "raw": "",
+            "processed": "",
+        },
+        "commands": {
+            "smoke": "",
+            "full": "",
+            "analyze": "",
+            "cleanup_preview": "uv run helix exp clean <sub_experiment_dir>",
+            "cleanup_confirmed": "uv run helix exp clean <sub_experiment_dir> --yes",
+        },
+        "artifacts": {
+            "metrics": "results/metrics/",
+            "plots": "results/plots/",
+            "tables": "results/tables/",
+        },
+        "notes": [],
+    }
+    return "# 本文件只写非敏感实验配置；token、密码、私有下载链接不要放进来。\n" + yaml.safe_dump(
+        spec, allow_unicode=True, sort_keys=False, default_flow_style=False,
+    )
+
+
+def build_sub_experiment_results_index(title: str, slug: str) -> str:
+    """Curated result note for one sub-experiment."""
+    fm = {
+        "title": f"{title} · 子实验结果",
+        "type": "mine",
+        "scope": "sub_experiment",
+        "sub_experiment": slug,
+        "tags": ["helix", "experiment", "mine", "sub_experiment"],
+        "links": ["../../plan.md"],
+    }
+    body = yaml.safe_dump(fm, allow_unicode=True, sort_keys=False, default_flow_style=False)
+    return f"""---
+{body}---
+# 子实验结果：{title}
+
+> 设置：`../setup.md` ｜ 配置：`../config.yaml` ｜ 原始数据在 `metrics/`、`plots/`、`tables/`
+
+## 结果概览
+<!-- agent: 把本子实验 results/ 下的原始指标/图/表蒸馏成一句话结论 + 小表。 -->
+
+## 与 baseline / 验收标准的对比
+<!-- agent: 对齐 setup.md 的指标和验收标准，说明是否支持本轮 hypothesis。 -->
+
+## 暴露的问题与混杂因素
+<!-- agent: 实现、运行、评测过程中发现的问题；没有就写「暂无」。 -->
+
+## 对顶层 claim 的影响
+<!-- agent: 这轮结果给 ../../results/index.md 的 supported_claim / unsupported_claim 提供什么证据。 -->
 """
 
 
@@ -447,27 +595,33 @@ def build_results_index_skeleton(title: str, note_rel: str, kind: str, domain: s
         if kind == "repro"
         else "我的实验→对比 baseline，说明是否达到 plan.md 的验收标准"
     )
-    problem_heading = "精读时没发现的问题" if kind == "repro" else "实验过程中暴露的问题"
+    problem_heading = "精读时没发现的问题" if kind == "repro" else "跨子实验暴露的问题"
     problem_prompt = (
         "复现/实验过程暴露、但精读论文时没注意到的问题——本节价值最高，务必如实记。"
         if kind == "repro"
-        else "实现/运行/评测暴露的问题、可能混杂因素、数据或 baseline 风险。"
+        else "汇总各 sub_experiments/<slug>/results/index.md 里的问题、混杂因素、数据或 baseline 风险。"
     )
     claim_section = ""
     if kind == "mine":
         claim_section = """
 ## 结果支持的 claim / 下一轮动作
-<!-- agent: result-to-claim：写清 intended_claim、supported_claim、unsupported_claim、证据强度、
-可能混杂因素，以及下一步是继续全量、补消融、改方法、换 baseline 还是停止。 -->
+<!-- agent: result-to-claim：只写跨子实验汇总结论。单轮结果先写到对应
+sub_experiments/<slug>/results/index.md，再在这里汇总 intended_claim、supported_claim、
+unsupported_claim、证据强度、可能混杂因素和 next_action。 -->
 """
+    raw_hint = (
+        "原始数据在 results/{metrics,plots,tables}/"
+        if kind == "repro"
+        else "单轮原始数据在 sub_experiments/<slug>/results/{metrics,plots,tables}/"
+    )
     return f"""---
 {body}---
 # 结果：{title}
 
-> {origin}：{link} ｜ 方案见同目录 plan.md ｜ 原始数据在 results/{{metrics,plots,tables}}/
+> {origin}：{link} ｜ 方向见同目录 plan.md ｜ {raw_hint}
 
 ## 结果概览
-<!-- agent: 把 results/metrics、results/plots、results/tables 里的原始数据蒸馏成表/图 + 一句话结论 -->
+<!-- agent: {'把 results/metrics、results/plots、results/tables 里的原始数据蒸馏成表/图 + 一句话结论' if kind == 'repro' else '汇总各子实验 results/index.md，给出当前总证据状态；不要在这里粘单轮流水账'} -->
 
 ## {compare_heading}
 <!-- agent: {compare_prompt} -->
@@ -495,13 +649,13 @@ def build_progress_skeleton(title: str, kind: str) -> str:
         note = "阶段完成权归用户：agent 只能写「建议确认」，不能替用户勾选确认。"
     else:
         heading = "实验进度"
-        stage_a = "- [ ] A. hypothesis-to-plan：假设、baseline、变量、实验矩阵和验收标准（等待用户确认）"
+        stage_a = "- [ ] A. hypothesis-to-plan：方向假设、子实验 setup/config 和验收标准（等待用户确认）"
         stage_b = "- [ ] B. plan-to-code：代码实现与最小测试/烟测（等待用户确认）"
         stage_c = "- [ ] C. run-monitor-analyze：全量运行、分析、结果回流（等待用户确认）"
         stage_d = "- [ ] D. result-to-claim：判断结果支持/不支持什么 claim，决定下一轮动作（等待用户确认）"
         current = "A. hypothesis-to-plan"
-        next_step = "填 plan.md：明确 hypothesis、baseline、变量、实验矩阵、指标、验收标准和分步命令。"
-        note = "这是用户自己的实验；不生成 setup.md，入口阶段是 hypothesis-to-plan。阶段完成权归用户。"
+        next_step = "填顶层 plan.md 的方向假设；用 `helix exp sub <工作区> --name <slug>` 为当前具体问题创建子实验 setup/config/results。"
+        note = "这是用户自己的实验；不生成顶层 setup.md，具体设置写在 sub_experiments/<slug>/setup.md。阶段完成权归用户。"
     return f"""# {heading}：{title}
 
 > {note}
@@ -543,10 +697,43 @@ RESULTS_LAYOUT = """# 实验结果存放规则（远程 agent 请遵守）
 - results/plots/    图（*.png / *.pdf）
 - results/tables/   表（*.csv / *.md）
 
+烟测、调试、临时试跑产物请在文件名或目录名里带 `smoke` / `tmp` / `debug` / `trial` / `dryrun` / `warmup`。
+实验结束后先 `uv run helix exp clean <工作区>` 预览，再确认是否加 `--yes` 删除。
+
 写产物前先 `mkdir -p results/{metrics,plots,tables}`——push 只传声明的文件、不建空目录树，
 目录不存在直接写会失败。
 不要把模型权重、checkpoint、完整日志放进 results/——那些留在远程，不回流本地。
 """
+
+
+MINE_RESULTS_LAYOUT = """# 实验结果存放规则（远程 agent 请遵守）
+
+这是 `type:mine` 工作区。顶层 `plan.md` 只管研究方向；具体实验必须写入子实验目录：
+
+- `sub_experiments/<slug>/setup.md`：本轮设置
+- `sub_experiments/<slug>/config.yaml`：本轮非敏感配置
+- `sub_experiments/<slug>/results/index.md`：本轮结果总结
+- `sub_experiments/<slug>/results/metrics/`：指标数据（*.json / *.csv）
+- `sub_experiments/<slug>/results/plots/`：图（*.png / *.pdf）
+- `sub_experiments/<slug>/results/tables/`：表（*.csv / *.md）
+
+烟测、调试、临时试跑产物请在文件名或目录名里带 `smoke` / `tmp` / `debug` / `trial` / `dryrun` / `warmup`。
+实验结束后先 `uv run helix exp clean <工作区或子实验目录>` 预览，再确认是否加 `--yes` 删除。
+
+新需求来时新建一个 `<slug>`，不要把旧文件事后搬进 archive。写产物前先：
+
+```bash
+mkdir -p sub_experiments/<slug>/results/{metrics,plots,tables}
+```
+
+顶层 `results/index.md` 只写跨子实验汇总，不放单轮原始数据。
+不要把模型权重、checkpoint、完整日志放进 results/——那些留在远程，不回流本地。
+"""
+
+
+def build_results_layout(kind: str) -> str:
+    """Result-placement contract pushed to the remote agent."""
+    return MINE_RESULTS_LAYOUT if kind == "mine" else RESULTS_LAYOUT
 
 
 def build_sync_yaml(kind: str) -> str:
@@ -557,11 +744,20 @@ def build_sync_yaml(kind: str) -> str:
     push = ["sync.yaml", "PROGRESS.md", "plan.md", "scripts/**", "configs/**", "RESULTS_LAYOUT.md"]
     if kind == "repro":
         push.insert(2, "setup.md")
+    if kind == "mine":
+        push.insert(push.index("RESULTS_LAYOUT.md"), "sub_experiments/**")
+    pull = ["results/metrics/**", "results/plots/**", "results/tables/**"]
+    if kind == "mine":
+        pull.extend([
+            "sub_experiments/*/results/metrics/**",
+            "sub_experiments/*/results/plots/**",
+            "sub_experiments/*/results/tables/**",
+        ])
     spec = {
         "remote": "",  # fill with a name from config.remotes; empty = transport disabled for this workspace
         "remote_path": "",  # empty = confirm on first push via --remote-path; then reused
         "push": push,
-        "pull": ["results/metrics/**", "results/plots/**", "results/tables/**"],
+        "pull": pull,
         "agent_view": {
             "models": {
                 "base_model": "",  # remote/local path or HF id visible to the agent; no tokens
@@ -595,8 +791,8 @@ def build_experiment_workspace(
     """Generate an experiment workspace skeleton under experiments/<domain>/<short_name>/ (or draft_notes/).
 
     kind="repro" (reproduce a paper): setup.md + plan.md + PROGRESS.md + results/index.md + RESULTS_LAYOUT.md + sync.yaml.
-    kind="mine" (my own experiment): plan.md (= experiment design) + PROGRESS.md + results/index.md +
-        RESULTS_LAYOUT.md + sync.yaml (no setup.md -- there is no original paper to transcribe).
+    kind="mine" (my own experiment): direction-level plan.md + PROGRESS.md + aggregate results/index.md +
+        sub_experiments/README.md + RESULTS_LAYOUT.md + sync.yaml (no top-level setup.md).
 
     Returns (workspace dir, list of newly created relative paths). Verifies non-empty after persisting, else raises OSError.
     """
@@ -612,9 +808,10 @@ def build_experiment_workspace(
         items.append(("plan.md", build_plan_skeleton(title, note_rel, cfg)))
     else:
         items.append(("plan.md", build_mine_plan_skeleton(title, note_rel, cfg)))
+        items.append(("sub_experiments/README.md", build_sub_experiments_readme(title)))
     items.append(("PROGRESS.md", build_progress_skeleton(title, kind)))
     items.append(("results/index.md", build_results_index_skeleton(title, note_rel, kind, domain)))
-    items.append(("RESULTS_LAYOUT.md", RESULTS_LAYOUT))
+    items.append(("RESULTS_LAYOUT.md", build_results_layout(kind)))
     items.append(("sync.yaml", build_sync_yaml(kind)))
 
     created: list[str] = []
@@ -628,3 +825,118 @@ def build_experiment_workspace(
             raise OSError(f"实验骨架写入失败，文件未落盘：{fpath}")
         created.append(rel)
     return ws, created
+
+
+def build_sub_experiment(
+    workspace: Path, name: str, *, title: str | None = None, overwrite: bool = False,
+) -> tuple[Path, list[str]]:
+    """Create one isolated sub-experiment under an existing type:mine workspace."""
+    slug = sub_experiment_slug(name)
+    sub = workspace / "sub_experiments" / slug
+    sub.mkdir(parents=True, exist_ok=True)
+    display = title or name
+    items = [
+        ("setup.md", build_sub_experiment_setup_skeleton(display, slug)),
+        ("config.yaml", build_sub_experiment_config_skeleton(display, slug)),
+        ("results/index.md", build_sub_experiment_results_index(display, slug)),
+        ("results/metrics/.gitkeep", ""),
+        ("results/plots/.gitkeep", ""),
+        ("results/tables/.gitkeep", ""),
+    ]
+    created: list[str] = []
+    for rel, content in items:
+        fpath = sub / rel
+        if fpath.exists() and not overwrite:
+            continue
+        fpath.parent.mkdir(parents=True, exist_ok=True)
+        fpath.write_text(content, encoding="utf-8")
+        if not fpath.exists():
+            raise OSError(f"子实验骨架写入失败，文件未落盘：{fpath}")
+        created.append(str(Path("sub_experiments") / slug / rel))
+    return sub, created
+
+
+@dataclass
+class CleanupResult:
+    """Deterministic cleanup report for transient experiment result artifacts."""
+
+    target: str
+    dry_run: bool
+    candidates: list[str]
+    deleted: list[str]
+    warnings: list[str]
+
+    def to_dict(self) -> dict:
+        return {
+            "target": self.target,
+            "dry_run": self.dry_run,
+            "candidates": self.candidates,
+            "deleted": self.deleted,
+            "warnings": self.warnings,
+        }
+
+
+def _result_roots_for_cleanup(target: Path) -> list[Path]:
+    """Result roots to clean for an experiment workspace or one sub-experiment path."""
+    roots: list[Path] = []
+    if (target / "results").is_dir():
+        roots.append(target / "results")
+    sub_root = target / "sub_experiments"
+    if sub_root.is_dir():
+        for child in sorted(p for p in sub_root.iterdir() if p.is_dir()):
+            if (child / "results").is_dir():
+                roots.append(child / "results")
+    return sorted(set(roots))
+
+
+def _is_transient_result_file(path: Path, result_root: Path) -> bool:
+    """Whether a result file is safe to treat as transient by naming convention."""
+    if path.name in PROTECTED_RESULT_FILENAMES:
+        return False
+    try:
+        rel = path.relative_to(result_root)
+    except ValueError:
+        return False
+    return any(TRANSIENT_ARTIFACT_RE.search(part) for part in rel.parts)
+
+
+def cleanup_transient_artifacts(target: Path, *, yes: bool = False) -> CleanupResult:
+    """Preview or delete transient result artifacts under one experiment/sub-experiment.
+
+    Safety contract:
+    - only touches files under results/ or sub_experiments/*/results/;
+    - never touches results/index.md or .gitkeep;
+    - only matches explicit transient tokens such as smoke/tmp/debug/trial/dryrun/warmup;
+    - dry-run by default, actual deletion requires yes=True.
+    """
+    target = target.expanduser().resolve()
+    if not target.exists() or not target.is_dir():
+        raise FileNotFoundError(f"实验目录不存在：{target}")
+
+    roots = _result_roots_for_cleanup(target)
+    warnings: list[str] = []
+    if not roots:
+        warnings.append("未发现 results/ 目录，无需清理")
+
+    files: list[Path] = []
+    for root in roots:
+        for path in sorted(root.rglob("*")):
+            if path.is_file() and _is_transient_result_file(path, root):
+                files.append(path)
+
+    candidates = [str(p.relative_to(target)) for p in files]
+    deleted: list[str] = []
+    if yes:
+        for path in files:
+            rel = str(path.relative_to(target))
+            path.unlink()
+            deleted.append(rel)
+        for root in roots:
+            for directory in sorted((p for p in root.rglob("*") if p.is_dir()),
+                                    key=lambda p: len(p.parts), reverse=True):
+                try:
+                    directory.rmdir()
+                except OSError:
+                    pass
+
+    return CleanupResult(str(target), not yes, candidates, deleted, warnings)

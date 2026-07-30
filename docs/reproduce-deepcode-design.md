@@ -9,10 +9,11 @@
 现有 `skills/reproduce/SKILL.md` 已经能把一篇论文或用户自己的实验转成实验工作区：
 
 - `setup.md`：原文实验设置（仅 `type:repro`）；
-- `plan.md`：本机/远程怎么跑；
+- `plan.md`：`type:repro` 写本机/远程怎么跑；`type:mine` 写研究方向和总假设；
 - `PROGRESS.md`：当前阶段、用户确认、阻塞和下一步；
 - `sync.yaml`：本实验远程传送清单 + agent 可见的非敏感运行视图；
 - `results/index.md`：结果回流后的加工笔记。
+- `sub_experiments/<slug>/`：`type:mine` 的具体子实验，含本轮 `setup.md`、`config.yaml` 和 `results/`。
 
 缺口在于：从论文到可执行实验仍主要依赖 agent 临场发挥。复杂论文复现时，agent 容易漏掉算法细节、实验矩阵、
 baseline、数据处理、环境约束，或者直接开始写代码，最后跑不出可验证结果。
@@ -80,7 +81,8 @@ plan-to-code
 run-monitor-analyze
 ```
 
-`type:mine`（用户自己的实验）没有原文 `setup.md`，走实验假设链路：
+`type:mine`（用户自己的实验）没有顶层原文 `setup.md`，走实验假设链路。顶层 `plan.md` 只管研究方向和
+总假设；每个具体问题由 `sub_experiments/<slug>/setup.md`、`config.yaml`、`results/` 隔离承载：
 
 ```text
 hypothesis-to-plan
@@ -93,13 +95,13 @@ result-to-claim
 ```
 
 两条链路复用 `plan-to-code`、`run-monitor-analyze`、远程同步、tmux、结果回流等执行底座；
-差异在入口事实来源和验收逻辑：复现论文对齐原文表/图和可复现性分级，用户自己的实验对齐 hypothesis、
-baseline、变量控制、实验矩阵和结果能支持的 claim。
+差异在入口事实来源和验收逻辑：复现论文对齐原文表/图和可复现性分级；用户自己的实验先对齐方向级
+hypothesis，再在子实验里对齐 baseline、变量控制、实验矩阵和结果能支持的 claim。
 
 工作区生成 `PROGRESS.md` 作为用户可读的轻量状态文件，记录当前阶段、用户确认、阻塞和下一步。
 agent 可以写「建议确认」，但阶段完成权归用户；CLI 暂不解析 `PROGRESS.md`，只负责生成骨架，避免把流程过早固化成状态机。
 对已有旧实验工作区，`helix migrate` 只补建 `PROGRESS.md` 并把当前阶段写成「待判定」；agent 后续读取
-`setup.md` / `plan.md` / `results/index.md` / 运行记录提出阶段建议，用户确认后再勾选完成。
+`setup.md` / `plan.md` / `sub_experiments/` / `results/index.md` / 运行记录提出阶段建议，用户确认后再勾选完成。
 
 | 阶段 | 适用类型 | 详细协议 |
 |---|---|---|
@@ -192,22 +194,32 @@ implementation_strategy: 分阶段实现顺序、每步测试点、降配策略
 
 输出：
 
-- 填好的 `plan.md`；
+- 填好的方向级 `plan.md`；
+- 至少一个按当前用户需求创建的 `sub_experiments/<slug>/`，含 `setup.md`、`config.yaml`、`results/index.md`；
 - `PROGRESS.md` 记录本阶段进展、阻塞和「建议用户确认」状态。
 
-`plan.md` 必须包含：
+方向级 `plan.md` 必须包含：
 
 ```yaml
-hypothesis: 要验证的研究假设或 claim
-baseline: 最小可信 baseline 和可选强 baseline
-variables: 自变量、因变量、控制变量
-experiment_matrix: 主实验、消融、缩比试验、失败判据
-metrics: 指标定义、统计方式、显著性/稳定性要求
-file_structure: 本实验需要的代码/配置/脚本结构
-implementation_components: 模型、数据、训练/推理、评测模块如何落到文件
-validation_approach: 烟测、全量实验、预期指标、验收标准
-environment_setup: uv/conda/容器方案、依赖版本、硬件要求
-implementation_strategy: 分阶段实现顺序、每步测试点、降配策略
+hypothesis: 方向级研究假设或 claim
+method_boundary: 跨子实验不变的设计约束、候选 baseline、总体验收口径
+available_capabilities: 可调用的 helix CLI、skill、LLM 生成方式和非敏感运行上下文
+sub_experiment_index: 每个 sub_experiments/<slug>/ 的用户需求、状态、关键结果和下一步
+claim_policy: 多个子实验如何合成 supported/unsupported claim
+```
+
+子实验 `setup.md` / `config.yaml` 必须包含本轮具体设置：
+
+```yaml
+baseline: 本轮最小可信 baseline 和可选强 baseline
+variables: 本轮自变量、因变量、控制变量
+experiment_matrix: 本轮主实验、消融、缩比试验、失败判据
+metrics: 本轮指标定义、统计方式、显著性/稳定性要求
+file_structure: 本轮代码、配置、脚本结构
+implementation_components: 本轮模型、数据、训练/推理、评测模块如何落到文件
+validation_approach: 本轮烟测、全量实验、预期指标、验收标准
+environment_setup: 本轮 uv/conda/容器方案、依赖版本、硬件要求
+implementation_strategy: 本轮分阶段实现顺序、每步测试点、降配策略
 ```
 
 约束：
@@ -215,7 +227,8 @@ implementation_strategy: 分阶段实现顺序、每步测试点、降配策略
 - 不把“我希望成立”写成“结果会成立”；预期必须可证伪；
 - baseline 必须能回答“相比什么有改进”；
 - 主实验和消融要服务于 claim，不为凑矩阵而扩大范围；
-- 长实验必须先设计烟测和失败退出条件。
+- 长实验必须先设计烟测和失败退出条件；
+- 新需求来时新建子实验目录，不把旧轮次文件事后搬进 archive。
 
 ### 3.4 `plan-to-code`：本地代码实现
 
@@ -232,7 +245,7 @@ implementation_strategy: 分阶段实现顺序、每步测试点、降配策略
 
 执行协议：
 
-1. 先读 `plan.md`；`type:repro` 还要读 `setup.md`；
+1. 先读 `plan.md`；`type:repro` 还要读顶层 `setup.md`；`type:mine` 还要读当前子实验的 `setup.md` 和 `config.yaml`；
 2. 先实现核心算法/模型，再实现数据和评测，最后补 README/requirements；
 3. 每实现一个组件，立即跑最小测试；
 4. 优先 `uv` 管依赖，其次 conda；环境只落实验隔离层；
@@ -251,14 +264,16 @@ implementation_strategy: 分阶段实现顺序、每步测试点、降配策略
 输入：
 
 - 已实现代码；
-- `plan.md` 的验证方案；
+- `plan.md` 的验证口径；
+- `type:mine` 当前子实验的 `sub_experiments/<slug>/setup.md` 和 `config.yaml`；
 - `sync.yaml`；
 - 远程资源 probe 结果。
 
 输出：
 
-- `results/{metrics,plots,tables}/` 原始结果；
-- 填好的 `results/index.md`；
+- `type:repro`：`results/{metrics,plots,tables}/` 原始结果；
+- `type:mine`：`sub_experiments/<slug>/results/{metrics,plots,tables}/` 原始结果；
+- 填好的结果笔记（repro 顶层 `results/index.md`；mine 子实验结果 + 顶层汇总）；
 - `PROGRESS.md` 记录本阶段完成情况和用户确认状态。
 
 流程：
@@ -268,16 +283,18 @@ implementation_strategy: 分阶段实现顺序、每步测试点、降配策略
 3. 分析烟测日志和最小结果；
 4. 烟测通过后启动全量：`--session helix-<短名>-run`；
 5. 长实验启动后停止轮询，告诉用户会话名、预计时长、查询方式；
-6. 完成后 `exp pull` 拉回 `results/{metrics,plots,tables}/`；
-7. 读原始结果，填 `results/index.md`；
-8. `uv run helix index build` 让结果可检索。
+6. 完成后 `exp pull` 拉回 results；mine 会按本地已有 `sub_experiments/<slug>/` 拉各自结果；
+7. 读原始结果，repro 填顶层 `results/index.md`；mine 先填子实验 `results/index.md`，再更新顶层汇总；
+8. `uv run helix exp clean <工作区或子实验目录>` 预览烟测/临时产物；用户确认后加 `--yes` 删除；
+9. `uv run helix index build` 让结果可检索。
 
 `results/index.md` 必须写：
 
 - 结果概览；
 - 与预期/原文或 baseline 对比；
 - 失败或偏差原因；
-- 问题记录：`type:repro` 写精读时没发现的问题；`type:mine` 写实验过程中暴露的问题、混杂因素和 baseline 风险；
+- 问题记录：`type:repro` 写精读时没发现的问题；`type:mine` 子实验写本轮暴露的问题，顶层只汇总跨子实验问题；
+- 清理记录：列出保留的正式结果，以及 `exp clean` 删除了哪些烟测/临时产物；
 - 可进入论文写作的图表/结论；
 - 本轮运行记录：命令、会话、远程路径、开始/结束时间、commit 或快照摘要。
 
@@ -285,14 +302,15 @@ implementation_strategy: 分阶段实现顺序、每步测试点、降配策略
 
 输入：
 
-- `plan.md` 中的 hypothesis、baseline、指标和验收标准；
-- `results/{metrics,plots,tables}/` 原始结果；
-- `results/index.md` 的结果概览；
+- `plan.md` 中的方向级 hypothesis 和汇总验收口径；
+- 各 `sub_experiments/<slug>/setup.md` 中的 baseline、指标和验收标准；
+- 各 `sub_experiments/<slug>/results/{metrics,plots,tables}/` 原始结果；
+- 各 `sub_experiments/<slug>/results/index.md` 的结果概览；
 - 运行记录、失败日志、异常现象。
 
 输出：
 
-- `results/index.md` 中的 claim 判断和下一轮决策；
+- 顶层 `results/index.md` 中跨子实验汇总后的 claim 判断和下一轮决策；
 - `PROGRESS.md` 记录本阶段完成情况和用户确认状态。
 
 判断清单：
@@ -308,7 +326,7 @@ implementation_strategy: 分阶段实现顺序、每步测试点、降配策略
 
 - 不能把负结果包装成正结果；
 - 不用单次 seed 或单个数据子集支撑过强 claim；
-- 指标和统计方式必须回到 `plan.md` 的验收标准；
+- 指标和统计方式必须回到对应子实验 `setup.md` 的验收标准，再汇总到顶层 `plan.md` 的 claim 口径；
 - 如果结果只支持缩比趋势，必须写清不能外推到完整设置。
 
 ## 4. 与现有 skills 的关系
@@ -330,10 +348,13 @@ implementation_strategy: 分阶段实现顺序、每步测试点、降配策略
 短期优先改 skill 和模板，CLI 保持薄：
 
 - `helix exp new` 生成更强的 `setup.md` / `plan.md` 引导；
+- `helix exp sub` 给 `type:mine` 新建隔离子实验目录，避免把不同用户需求、配置和结果混在一个顶层 results；
+- `helix exp clean` 只按命名规范清理结果目录里的烟测、调试、临时试跑产物，默认预览，`--yes` 才删除；
 - `PROGRESS.md` 只做用户可读进度，不作为 CLI 必需状态；
-- `RESULTS_LAYOUT.md` 后续可加 run manifest 约定；
+- `RESULTS_LAYOUT.md` 约定 repro 顶层 results 与 mine 子实验 results 的写盘位置，并要求临时产物命名带
+  `smoke/tmp/debug/trial/dryrun/warmup`；
 - `sync.yaml` 仍只做远程、传送清单和非敏感 `agent_view`，不塞复杂执行逻辑；
-- `helix migrate` 给旧工作区补 `PROGRESS.md`，并把 `sync.yaml.push` 补上 `PROGRESS.md`；
+- `helix migrate` 给旧工作区补 `PROGRESS.md`，并给旧 mine 工作区补 `sub_experiments/README.md` 与 sync 子实验规则；
 - `exp run/probe/start/pull/sessions/kill` 继续是确定性原子操作。
 
 可选新增 CLI 能力：
@@ -341,7 +362,6 @@ implementation_strategy: 分阶段实现顺序、每步测试点、降配策略
 | 命令 | 作用 | 优先级 |
 |---|---|---|
 | `helix exp doctor <工作区>` | 检查 sync.yaml、remote_path、results layout、远程 GPU/磁盘、环境策略风险 | P1 |
-| `helix exp cleanup <工作区>` | 按命名规范清理一次性 tmux 会话 | P1 |
 | `helix exp manifest <工作区>` | 记录本轮启动命令、会话、远程路径、commit/快照摘要 | P2 |
 | `helix exp logs <工作区> --session <名>` | 只读拉取远程 tmux/日志尾部，不暴露凭据 | P2 |
 
@@ -356,6 +376,7 @@ implementation_strategy: 分阶段实现顺序、每步测试点、降配策略
 - 远程实验优先 tmux；
 - 区分长驻、一次性、调试会话；
 - 一次性会话执行完且分析完必须清理；
+- 烟测、调试、临时试跑结果必须按 `smoke/tmp/debug/trial/dryrun/warmup` 命名，结束后用 `exp clean` 预览并经用户确认后清理；
 - 凭据只经 CLI 子进程边界注入，绝不进入模型上下文。
 
 ## 7. 分阶段落地
@@ -367,17 +388,19 @@ implementation_strategy: 分阶段实现顺序、每步测试点、降配策略
 - 强化 `helix/repro.py` 里的 `setup.md` / `plan.md` 骨架注释。
 - `helix exp new` 生成 `PROGRESS.md`，`repro` 从 `paper-to-setup` 开始，`mine` 从
   `hypothesis-to-plan` 开始，记录当前阶段、用户确认、阻塞和下一步。
+- `type:mine` 顶层 `plan.md` 只管方向；`helix exp sub` 生成每轮子实验 `setup.md`、`config.yaml`、
+  `results/index.md` 和结果目录。
 - `helix migrate` 给已有实验工作区补 `PROGRESS.md`，当前阶段标「待判定」，不让 CLI/LLM 在迁移中自动判定；
   后续由 agent 分析现有文件并请用户确认。
-- `plan.md` 显式要求 file_structure / implementation_components / validation_approach / environment_setup /
-  implementation_strategy 五类信息。
-- 不新增依赖，不改存储结构。
+- `type:repro` 的 `plan.md`、`type:mine` 的子实验 `setup.md` / `config.yaml` 显式要求
+  file_structure / implementation_components / validation_approach / environment_setup / implementation_strategy 五类信息。
+- `RESULTS_LAYOUT.md` 和 `sync.yaml` 对齐 mine 子实验结果目录。
+- 不新增依赖。
 
 ### P1：增加确定性检查
 
 - 新增 `helix exp doctor`：跑前检查环境风险、remote_path、sync.yaml、results layout、GPU/磁盘。
-- 新增 `helix exp cleanup`：按 `helix-<短名>-tmp-*` 清理一次性会话。
-- tests 覆盖 doctor/cleanup 的命令构造和安全边界。
+- tests 覆盖 doctor 的命令构造和安全边界。
 
 ### P2：运行记录和结果 manifest
 
@@ -395,18 +418,20 @@ implementation_strategy: 分阶段实现顺序、每步测试点、降配策略
 
 一次完整复现流程完成时，应满足：
 
-- `setup.md` 能回答“原文到底怎么做”；
-- `plan.md` 能回答“这台机器上具体怎么跑”；
+- `type:repro` 的 `setup.md` 能回答“原文到底怎么做”；
+- `type:repro` 的 `plan.md` 能回答“这台机器上具体怎么跑”；`type:mine` 的顶层 `plan.md` 能回答“这条研究线验证什么”；
+- `type:mine` 当前子实验的 `setup.md` / `config.yaml` 能回答“本轮具体怎么跑、怎么验收”；
 - 代码工作区能跑烟测；
 - 全量实验在远程 tmux 会话中运行，用户可自行查看；
 - 一次性会话已清理，长驻会话有明确用途；
-- `results/{metrics,plots,tables}/` 有原始结果；
+- `type:repro` 的 `results/{metrics,plots,tables}/` 或 `type:mine` 子实验的
+  `sub_experiments/<slug>/results/{metrics,plots,tables}/` 有原始结果；
 - `results/index.md` 有结论、偏差分析、精读漏掉的问题和运行记录；
+- 烟测/临时结果已通过 `exp clean` 预览并按用户确认清理，正式结果保留；
 - `uv run helix index build` 后，结果能被本地检索到。
 
 ## 9. 下一步
 
-1. 更新 `skills/reproduce/SKILL.md`，把本文 4 个子流程写入主流程。
-2. 更新 `helix/repro.py` 的 `setup.md` / `plan.md` 骨架模板。
-3. 补测试确认 `exp new` 生成的新骨架包含关键提示。
-4. 视需要再做 `exp doctor` / `exp cleanup`。
+1. 视需要实现 `exp doctor`，把 sync、remote_path、结果布局和远程资源检查收成一个只读诊断入口。
+2. 设计 run manifest，记录命令、会话、远程路径、commit/快照摘要和结果文件，用于结果审计。
+3. 如果临时产物命名规则不够精细，再迭代 `RESULTS_LAYOUT.md`，不要让 `exp clean` 通过内容猜测结果价值。

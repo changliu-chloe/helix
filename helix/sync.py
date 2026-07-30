@@ -39,6 +39,7 @@ from .config import Config, Remote
 
 # pull only ever lands raw artifacts here (relative to the workspace). Hand-written docs stay untouched.
 PULL_SUBDIRS = ("results/metrics", "results/plots", "results/tables")
+SUB_EXPERIMENTS_DIR = "sub_experiments"
 # RESULTS_LAYOUT.md must always ride along on push -- it's the remote-agent write contract.
 REQUIRED_PUSH = "RESULTS_LAYOUT.md"
 
@@ -215,6 +216,33 @@ def push(cfg: Config, workspace: Path, *, dry_run: bool = False) -> SyncResult:
     return SyncResult("push", remote.name, remote_dir, cmds, False, rc, warnings)
 
 
+def _pull_result_targets(workspace: Path) -> list[tuple[str, Path]]:
+    """Remote result subdir -> local parent dir pairs that are safe to pull.
+
+    Top-level results are kept for paper reproductions and aggregate summaries. For type:mine
+    workspaces, each locally declared sub_experiment has isolated raw results under its own
+    results/{metrics,plots,tables}/ tree.
+    """
+    targets: list[tuple[str, Path]] = []
+    (workspace / "results").mkdir(parents=True, exist_ok=True)
+    for sub in PULL_SUBDIRS:
+        local = workspace / sub
+        local.mkdir(parents=True, exist_ok=True)
+        targets.append((sub, workspace / "results"))
+
+    sub_root = workspace / SUB_EXPERIMENTS_DIR
+    if not sub_root.exists() or not sub_root.is_dir():
+        return targets
+    for child in sorted(p for p in sub_root.iterdir() if p.is_dir()):
+        result_root = child / "results"
+        result_root.mkdir(parents=True, exist_ok=True)
+        for leaf in ("metrics", "plots", "tables"):
+            (result_root / leaf).mkdir(parents=True, exist_ok=True)
+            remote_sub = f"{SUB_EXPERIMENTS_DIR}/{child.name}/results/{leaf}"
+            targets.append((remote_sub, result_root))
+    return targets
+
+
 def pull(cfg: Config, workspace: Path, *, dry_run: bool = False) -> SyncResult:
     """Pull results/{metrics,plots,tables}/ from the confirmed remote path back into the workspace via scp.
 
@@ -229,16 +257,11 @@ def pull(cfg: Config, workspace: Path, *, dry_run: bool = False) -> SyncResult:
     if _has_plaintext_password(remote.host):
         warnings.append(f"remote '{remote.name}' 的 host 里疑似含明文密码，建议改用 ~/.ssh/config alias")
 
-    # local landing spots
-    (workspace / "results").mkdir(parents=True, exist_ok=True)
-    for sub in PULL_SUBDIRS:
-        (workspace / sub).mkdir(parents=True, exist_ok=True)
-
-    # one scp per result subdir; each lands under the local results/ dir.
+    # one scp per result subdir; each lands under its local results/ parent dir.
     cmds: list[list[str]] = []
-    for sub in PULL_SUBDIRS:
+    for sub, local_parent in _pull_result_targets(workspace):
         src = f"{remote.host}:{remote_dir}/{sub}"
-        cmds.append(_scp_base(remote) + [src, str(workspace / "results") + "/"])
+        cmds.append(_scp_base(remote) + [src, str(local_parent) + "/"])
 
     if dry_run:
         return SyncResult("pull", remote.name, remote_dir, cmds, True, 0, warnings)

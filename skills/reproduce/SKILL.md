@@ -19,7 +19,9 @@ helix 负责确定性活
 `type:repro` 依赖对论文的深入理解。若库里还没有这篇的深读笔记，**先走 deep-read 流程**
 （`note new` → `fetch` 读全文 → 填笔记），再回来复现。已有笔记则直接用。
 
-`type:mine` 是用户自己的实验，没有原文 `setup.md`，从 `hypothesis-to-plan` 开始。
+`type:mine` 是用户自己的实验，没有顶层原文 `setup.md`。顶层 `plan.md` 只管研究方向和总假设；
+具体子实验从 `sub_experiments/<slug>/setup.md` 开始，每个子实验有自己的 `setup.md`、`config.yaml`
+和 `results/`，避免不同轮次互相污染。
 
 ## 渐进式子流程（Paper2Code 风格，但边界仍归 helix）
 
@@ -41,7 +43,7 @@ helix 负责确定性活
 
 | 阶段 | 目标产物 | 进入阶段时读取 |
 |---|---|---|
-| A. hypothesis-to-plan | 填好 `plan.md`，明确假设、baseline、变量、实验矩阵和验收标准 | `references/hypothesis-to-plan.md` |
+| A. hypothesis-to-plan | 填好顶层 `plan.md` 的方向级假设，并为具体问题创建 `sub_experiments/<slug>/` | `references/hypothesis-to-plan.md` |
 | B. plan-to-code | 本地实现代码并完成最小测试/烟测 | `references/plan-to-code.md` |
 | C. run-monitor-analyze | 运行、监控、拉回结果并填 `results/index.md` | `references/run-monitor-analyze.md` |
 | D. result-to-claim | 判断结果支持/不支持什么 claim，决定下一轮动作 | `references/result-to-claim.md` |
@@ -54,16 +56,23 @@ helix 负责确定性活
 ```bash
 uv run helix exp new <笔记路径 或 arXiv id> [--domain "<方向>"] [--draft]   # 复现别人（type:repro）
 uv run helix exp new --mine "<实验名>" [<对标论文笔记/id>] [--domain "<方向>"]  # 我自己的实验（type:mine）
+uv run helix exp sub <工作区> --name "<子实验短名>" [--title "<展示标题>"]       # 给 type:mine 增加隔离子实验
+uv run helix exp clean <工作区或子实验目录> [--yes]                            # 预览/清理烟测和临时结果
 ```
 - **复现别人**：传已有笔记路径最好（自动读 frontmatter 拿标题/方向/回链）；也可传 arXiv id。
-- **我自己的实验**：用 `--mine "<名字>"`，无 `setup.md`（没原文可抄），从 `hypothesis-to-plan`
-  开始，`plan.md` 即实验设计；可选带一个对标论文做回链。
+- **我自己的实验**：用 `--mine "<名字>"`，无顶层 `setup.md`（没原文可抄），从 `hypothesis-to-plan`
+  开始。顶层 `plan.md` 只写大方向；每个具体问题先用 `exp sub` 新建子实验目录，再把本轮设置写进去。
 - 在 `experiments/<方向>/<短名>/` 生成骨架：
   - `setup.md`（仅 repro）+ `plan.md` — 你要填的实验设置/方案
   - `PROGRESS.md` — 当前阶段、用户确认记录、阻塞和下一步
   - `results/index.md` — 结果笔记（带 `type` frontmatter，进索引，双链回论文）
   - `RESULTS_LAYOUT.md` — 结果存放规则，push 时传给远程 agent（见第 5 步）
   - `sync.yaml` — 本工作区传送清单（远程机名 + push/pull 文件 + `agent_view` 非敏感运行视图）
+- `type:mine` 额外有 `sub_experiments/README.md`。每个子实验目录固定为：
+  `setup.md`（本轮需求/假设/baseline/命令）、`config.yaml`（本轮非敏感结构化配置）、
+  `results/index.md` + `results/{metrics,plots,tables}/`（本轮结果）。新需求来时新建目录，不做事后 archive。
+- 烟测、调试、临时试跑产物命名带 `smoke` / `tmp` / `debug` / `trial` / `dryrun` / `warmup`。
+  实验结束后先 `exp clean` 预览候选，再经用户确认后加 `--yes` 删除；正式结果和 `results/index.md` 不应被清理。
 - **`--draft`**：落到 `draft_notes/` 而非 `experiments/`——需求测试、试跑方案时用这个。
 - 输出 JSON 含 `workspace` 路径与 `kind`；骨架里每个 `<!-- agent: … -->` 就是你要填的。
 - 每完成一个阶段后，更新 `PROGRESS.md` 的当前阶段、阻塞和下一步；只有用户明确确认后，才把对应阶段勾选为完成。
@@ -176,9 +185,10 @@ uv run helix exp pull <工作区> [--dry-run]                   # 拉 results/{m
 `exp pull` 回来后，读 `results/{metrics,plots,tables}/` 里的原始数据，蒸馏进 `results/index.md`：
 - **结果概览**：把原始指标/图整理成表 + 一句话结论。
 - **与预期/原文或 baseline 对比**：复现→对齐原文表几差多少；我的实验→对比 baseline 和验收标准。
-- **问题记录**：复现→写精读时没发现的问题；我的实验→写实验过程中暴露的问题、混杂因素和 baseline 风险。
+- **问题记录**：复现→写精读时没发现的问题；我的实验→子实验写本轮暴露的问题、混杂因素和 baseline 风险，顶层只汇总跨子实验问题。
 - **结果到 claim（仅 mine）**：写清 supported_claim / unsupported_claim / evidence_strength / next_action。
-- 填好后 `uv run helix index build` 建索引，撰稿时按 `type`（repro/mine）+ 双链检索。
+- **目录清理**：先 `uv run helix exp clean <工作区或子实验目录>` 预览烟测/临时产物，用户确认后加 `--yes` 删除。
+- 填好并清理后 `uv run helix index build` 建索引，撰稿时按 `type`（repro/mine）+ 双链检索。
 
 ## 非目标：helix 不替你写代码、不替你决策
 helix CLI 只做确定性原子操作（连接/传输/开会话/探硬件/凭据注入）。**写实验代码、判断烟测通没通、

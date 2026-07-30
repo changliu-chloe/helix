@@ -104,7 +104,7 @@ uv run helix search "vision language action" --top-n 5   # 检索并打分
 | 命令 | 说明 | 状态 |
 |---|---|---|
 | `helix init` | 软链 skills 到 .claude/skills + .agents/skills、AGENTS.md→CLAUDE.md，启用自然语言触发（首次搭建） | ✅ |
-| `helix migrate` | `git pull` 后追平：重链新 skill（含 .agents / AGENTS.md）、清失效软链、按模板补 config 缺失字段（备份+追加）、给旧实验补 PROGRESS.md、提示依赖/索引更新 | ✅ |
+| `helix migrate` | `git pull` 后追平：重链新 skill（含 .agents / AGENTS.md）、清失效软链、按模板补 config 缺失字段（备份+追加）、给旧实验补 PROGRESS.md，并给旧 mine 实验补 sub_experiments 入口 | ✅ |
 | `helix status` | 配置/库/索引状态 | ✅ |
 | `helix search "<query>"` | 检索 + 4维打分（arxiv/s2/dblp 多源合并去重） | ✅ |
 | `helix note new <id>` | 抓论文生成深读笔记骨架（文件用短名） | ✅ |
@@ -116,8 +116,10 @@ uv run helix search "vision language action" --top-n 5   # 检索并打分
 | `helix fetch <id>` | 抓全文（MinerU）+ 高清图（源码包）到 assets/ | ✅ |
 | `helix exp vram --params <B>` | 显存估算 + 对各硬件档判级（装得下/量化/多卡TP/offload） | ✅ |
 | `helix exp new <笔记\|id>` | 建复现工作区骨架（setup+plan+PROGRESS+results/+RESULTS_LAYOUT+sync.yaml；含 agent_view 非敏感运行视图），`--draft` 落 draft_notes | ✅ |
-| `helix exp new --mine "<实验名>"` | 建我自己的实验工作区（type:mine，无 setup.md，plan.md 即实验设计） | ✅ |
-| `helix exp push/pull <工作区>` | 本地↔远程 GPU 传送带（scp 封装，跨平台；首次需 `--remote-path` 确认远程路径；`--dry-run` 预览；结果只回流 results/） | ✅ |
+| `helix exp new --mine "<实验名>"` | 建我自己的实验工作区（type:mine，无顶层 setup.md，plan.md 只管方向；具体轮次进 sub_experiments/） | ✅ |
+| `helix exp sub <工作区> --name "<子实验短名>"` | 给 type:mine 新建隔离子实验（setup.md + config.yaml + results/），新需求不再事后搬 archive | ✅ |
+| `helix exp clean <工作区或子实验目录>` | 实验结束后预览/清理烟测、tmp、debug 等临时结果；默认只预览，确认后加 `--yes` 删除 | ✅ |
+| `helix exp push/pull <工作区>` | 本地↔远程 GPU 传送带（scp 封装，跨平台；首次需 `--remote-path` 确认远程路径；`--dry-run` 预览；结果只回流 results/ 与子实验 results/） | ✅ |
 | `helix exp start <工作区>` | 开始实验：可选 git 提交本轮改动（`git.enabled=true` 时）+ push 代码上远程；默认只 push、不碰 git | ✅ |
 | `helix exp run <工作区> --cmd "..."` | 在远程 tmux 会话里跑命令（`--oneshot` 跑完退会话，`--sudo` 需提权，`--session` 指定会话名） | ✅ |
 | `helix exp probe <工作区>` | 探远程磁盘/GPU 占用（JSON），跑实验前判断条件 | ✅ |

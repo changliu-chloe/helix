@@ -451,6 +451,50 @@ def cmd_repro(args: argparse.Namespace) -> int:
         print(str(ws))
         return 0
 
+    if args.action == "sub":
+        if not args.target:
+            print("[helix] exp sub 需要工作区路径", file=sys.stderr)
+            return 1
+        if not args.name:
+            print("[helix] exp sub 需要 --name \"<子实验短名>\"", file=sys.stderr)
+            return 1
+        ws = Path(args.target).expanduser()
+        if not ws.exists() or not ws.is_dir():
+            print(f"[helix] 工作区不存在：{ws}", file=sys.stderr)
+            return 1
+        try:
+            sub_ws, created = repro_mod.build_sub_experiment(
+                ws, args.name, title=args.title, overwrite=args.overwrite,
+            )
+        except (OSError, ValueError) as e:
+            print(f"[helix] {e}", file=sys.stderr)
+            return 1
+        result = {"workspace": str(ws), "sub_experiment": str(sub_ws), "created": created}
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        msg = f"新建 {created}" if created else "已存在（跳过，可加 --overwrite）"
+        print(f"[helix] 子实验工作区：{sub_ws} — {msg}", file=sys.stderr)
+        print(str(sub_ws))
+        return 0
+
+    if args.action == "clean":
+        if not args.target:
+            print("[helix] exp clean 需要实验或子实验目录路径", file=sys.stderr)
+            return 1
+        target = Path(args.target).expanduser()
+        try:
+            result = repro_mod.cleanup_transient_artifacts(target, yes=args.yes)
+        except (OSError, ValueError) as e:
+            print(f"[helix] {e}", file=sys.stderr)
+            return 1
+        print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
+        if result.dry_run:
+            print(f"[helix] 清理预览：发现 {len(result.candidates)} 个临时产物；确认删除请加 --yes", file=sys.stderr)
+        else:
+            print(f"[helix] 清理完成：删除 {len(result.deleted)} 个临时产物", file=sys.stderr)
+        for w in result.warnings:
+            print(f"[helix] {w}", file=sys.stderr)
+        return 0
+
     if args.action in ("push", "pull", "run", "probe", "sessions", "kill", "start"):
         return _cmd_exp_remote(args, cfg)
 
@@ -743,9 +787,9 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--overwrite", action="store_true", help="new: 覆盖已存在的综述骨架")
     sp.set_defaults(func=cmd_review)
 
-    sp = sub.add_parser("exp", help="实验/复现：vram 判级 / new 建工作区 / push·pull 传送 / start·run·probe·sessions·kill 远程执行")
-    sp.add_argument("action", choices=["vram", "new", "push", "pull", "start", "run", "probe", "sessions", "kill"])
-    sp.add_argument("target", nargs="?", help="new: 笔记/arXiv id；push/pull/start/run/probe/sessions/kill: 工作区路径")
+    sp = sub.add_parser("exp", help="实验/复现：vram 判级 / new 建工作区 / sub 建子实验 / clean 清临时产物 / push·pull 传送 / 远程执行")
+    sp.add_argument("action", choices=["vram", "new", "sub", "clean", "push", "pull", "start", "run", "probe", "sessions", "kill"])
+    sp.add_argument("target", nargs="?", help="new: 笔记/arXiv id；sub/clean/push/pull/start/run/probe/sessions/kill: 工作区路径")
     sp.add_argument("--params", type=float, help="vram: 模型参数量（十亿，如 7 表示 7B）")
     sp.add_argument("--dtype", default="fp16", help="vram: 权重精度 fp32/fp16/bf16/fp8/int8/int4")
     sp.add_argument("--ctx", type=int, default=2048, help="vram: 上下文长度")
@@ -754,12 +798,14 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--hidden", type=int, default=None, help="vram: hidden size（给了则精算 KV）")
     sp.add_argument("--kv-dtype", default=None, help="vram: KV cache 精度（默认同权重上限 fp16）")
     sp.add_argument("--profile", help="vram: 只判这台硬件档；省略判 config 全部")
-    sp.add_argument("--name", help="new: 工作区短名（省略从标题自动生成）")
+    sp.add_argument("--name", help="new: 工作区短名（省略从标题自动生成）；sub: 子实验短名")
+    sp.add_argument("--title", help="sub: 子实验展示标题（省略用 --name）")
     sp.add_argument("--domain", help="new: 研究方向（归档子目录）")
     sp.add_argument("--mine", metavar="实验名", help="new: 建我自己的实验（type:mine，无 setup.md）；target 可选为对标论文")
     sp.add_argument("--draft", action="store_true", help="new: 落 draft_notes/ 而非 experiments/")
     sp.add_argument("--overwrite", action="store_true", help="new: 覆盖已有骨架")
     sp.add_argument("--dry-run", action="store_true", help="push/pull/start: 预览传输，不实际改动")
+    sp.add_argument("--yes", action="store_true", help="clean: 实际删除临时产物；省略时只预览")
     sp.add_argument("--cmd", help="run: 在远程 tmux 里执行的命令")
     sp.add_argument("--session", help="run/kill: 远程 tmux 会话名（run 省略用 helix-exp）")
     sp.add_argument("--oneshot", action="store_true", help="run: 命令跑完自动退会话（如装环境）；省略则保留会话")

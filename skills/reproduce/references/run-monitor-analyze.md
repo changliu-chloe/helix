@@ -1,19 +1,22 @@
 # run-monitor-analyze：运行、监控、结果回流
 
-目标：在本地或远程运行实验，监控关键状态，拉回结果并沉淀到 `results/index.md`。
+目标：在本地或远程运行实验，监控关键状态，拉回结果并沉淀到结果笔记。
+`type:mine` 先写对应 `sub_experiments/<slug>/results/index.md`，再更新顶层 `results/index.md` 汇总。
 
 ## 输入
 
 - 已实现代码；
-- `plan.md` 的验证方案；
+- `plan.md` 的方向级验证口径；
+- `type:mine` 当前子实验的 `sub_experiments/<slug>/setup.md` 和 `config.yaml`；
 - `sync.yaml`；
 - 远程资源 probe 结果；
 - 烟测日志和全量运行日志。
 
 ## 输出
 
-- `results/{metrics,plots,tables}/` 原始结果；
-- 填好的 `results/index.md`；
+- `type:repro`：`results/{metrics,plots,tables}/` 原始结果；
+- `type:mine`：`sub_experiments/<slug>/results/{metrics,plots,tables}/` 原始结果；
+- 填好的结果笔记（repro 顶层 `results/index.md`；mine 子实验结果 + 顶层汇总）；
 - `PROGRESS.md` 中本阶段的完成情况和用户确认记录。
 
 ## 流程
@@ -23,16 +26,18 @@
 3. 分析烟测日志和最小结果；
 4. 烟测通过后启动全量：`--session helix-<短名>-run`；
 5. 长实验启动后停止轮询，告诉用户会话名、预计时长、查询方式；
-6. 完成后 `exp pull` 拉回 `results/{metrics,plots,tables}/`；
-7. 读原始结果，填 `results/index.md`；
-8. `uv run helix index build` 让结果可检索。
+6. 完成后 `exp pull` 拉回 results；mine 会按本地已有 `sub_experiments/<slug>/` 拉各自结果；
+7. 读原始结果，repro 填顶层 `results/index.md`；mine 先填子实验 `results/index.md`，再更新顶层汇总；
+8. `uv run helix exp clean <工作区或子实验目录>` 预览烟测/临时产物；用户确认后加 `--yes` 删除；
+9. `uv run helix index build` 让结果可检索。
 
 ## results/index.md 必须写
 
 - 结果概览；
 - 与预期/原文或 baseline 对比；
 - 失败或偏差原因；
-- 问题记录：`type:repro` 写精读时没发现的问题；`type:mine` 写实验过程中暴露的问题、混杂因素和 baseline 风险；
+- 问题记录：`type:repro` 写精读时没发现的问题；`type:mine` 子实验写本轮暴露的问题，顶层只汇总跨子实验问题；
+- 清理记录：列出保留的正式结果，以及 `exp clean` 删除了哪些烟测/临时产物；
 - 可进入论文写作的图表/结论；
 - 本轮运行记录：命令、会话、远程路径、开始/结束时间、commit 或快照摘要。
 
