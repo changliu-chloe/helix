@@ -261,6 +261,53 @@ class TestMigrate(unittest.TestCase):
         self.assertIn("D. result-to-claim", progress)
         self.assertIn("kind：mine", progress)
         self.assertIn("d/mine", report.progress_created)
+        self.assertTrue((ws / "sub_experiments" / "README.md").exists())
+        self.assertIn("d/mine", report.mine_sub_experiments_upgraded)
+
+    def test_migrate_upgrades_mine_sub_experiment_sync_idempotently(self):
+        from helix import repro
+
+        ws = self.root / "workspace" / "experiments" / "d" / "mine"
+        ws.mkdir(parents=True)
+        (ws / "plan.md").write_text("plan", encoding="utf-8")
+        (ws / "RESULTS_LAYOUT.md").write_text(repro.RESULTS_LAYOUT, encoding="utf-8")
+        (ws / "sync.yaml").write_text(
+            "remote: ''\n"
+            "remote_path: ''\n"
+            "push:\n"
+            "- sync.yaml\n"
+            "- plan.md\n"
+            "- RESULTS_LAYOUT.md\n"
+            "pull:\n"
+            "- results/metrics/**\n",
+            encoding="utf-8",
+        )
+        report, _ = migrate.run_migrate(self.cfg, scope="project")
+        self.assertIn("d/mine", report.mine_sub_experiments_upgraded)
+        self.assertIn("d/mine", report.sync_sub_experiments_upgraded)
+        self.assertIn("sub_experiments/<slug>", (ws / "RESULTS_LAYOUT.md").read_text(encoding="utf-8"))
+        spec = yaml.safe_load((ws / "sync.yaml").read_text(encoding="utf-8"))
+        self.assertIn("sub_experiments/**", spec["push"])
+        self.assertIn("sub_experiments/*/results/metrics/**", spec["pull"])
+
+        second_report, _ = migrate.run_migrate(self.cfg, scope="project")
+        second = yaml.safe_load((ws / "sync.yaml").read_text(encoding="utf-8"))
+        self.assertEqual(second["push"].count("sub_experiments/**"), 1)
+        self.assertEqual(second["pull"].count("sub_experiments/*/results/metrics/**"), 1)
+        self.assertEqual(second_report.sync_sub_experiments_upgraded, [])
+
+    def test_migrate_does_not_treat_sub_experiment_as_workspace(self):
+        ws = self.root / "workspace" / "experiments" / "d" / "mine"
+        sub = ws / "sub_experiments" / "01_smoke"
+        sub.mkdir(parents=True)
+        (ws / "plan.md").write_text("plan", encoding="utf-8")
+        (sub / "setup.md").write_text("sub setup", encoding="utf-8")
+        (sub / "results").mkdir()
+        (sub / "results" / "index.md").write_text("sub result", encoding="utf-8")
+
+        report, _ = migrate.run_migrate(self.cfg, scope="project")
+        self.assertIn("d/mine", report.progress_created)
+        self.assertFalse((sub / "PROGRESS.md").exists())
 
     def test_progress_migration_is_idempotent(self):
         ws = self.root / "workspace" / "experiments" / "d" / "paper"

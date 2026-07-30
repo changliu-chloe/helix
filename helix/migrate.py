@@ -146,6 +146,8 @@ class MigrateReport:
     results_upgraded: list[str] = field(default_factory=list)  # workspaces whose results.md -> results/index.md
     progress_created: list[str] = field(default_factory=list)  # workspaces where PROGRESS.md was created
     sync_push_upgraded: list[str] = field(default_factory=list)  # workspaces whose sync.yaml push includes PROGRESS.md
+    mine_sub_experiments_upgraded: list[str] = field(default_factory=list)  # mine workspaces given sub_experiments guide
+    sync_sub_experiments_upgraded: list[str] = field(default_factory=list)  # mine sync.yaml files given sub_experiments rules
     workspace_migrate_pending: bool = False                   # data dirs sit outside workspace/, need move
     workspace_migrated: list[str] = field(default_factory=list)  # dirs moved under workspace/ this run
 
@@ -164,6 +166,8 @@ class MigrateReport:
             "results_upgraded": self.results_upgraded,
             "progress_created": self.progress_created,
             "sync_push_upgraded": self.sync_push_upgraded,
+            "mine_sub_experiments_upgraded": self.mine_sub_experiments_upgraded,
+            "sync_sub_experiments_upgraded": self.sync_sub_experiments_upgraded,
             "workspace_migrate_pending": self.workspace_migrate_pending,
             "workspace_migrated": self.workspace_migrated,
         }
@@ -335,6 +339,11 @@ def _experiment_workspaces(root: Path) -> list[Path]:
     for pattern in ("plan.md", "setup.md", "sync.yaml", "results/index.md", "results.md"):
         for marker in root.rglob(pattern):
             if marker.is_file():
+                try:
+                    if "sub_experiments" in marker.relative_to(root).parts:
+                        continue
+                except ValueError:
+                    continue
                 ws = marker.parent
                 if pattern.startswith("results"):
                     ws = marker.parent.parent
@@ -373,12 +382,12 @@ def _migration_progress_skeleton(ws: Path, kind: str) -> str:
     else:
         heading = "实验进度"
         stages = [
-            "A. hypothesis-to-plan：假设、baseline、变量、实验矩阵和验收标准",
+            "A. hypothesis-to-plan：方向假设、子实验 setup/config 和验收标准",
             "B. plan-to-code：代码实现与最小测试/烟测",
             "C. run-monitor-analyze：全量运行、分析、结果回流",
             "D. result-to-claim：判断结果支持/不支持什么 claim，决定下一轮动作",
         ]
-        next_step = "让 reproduce agent 读取 plan.md、results/index.md 和运行记录，判断当前处于 A/B/C/D 哪一阶段，再请用户确认。"
+        next_step = "让 reproduce agent 读取 plan.md、sub_experiments/、results/index.md 和运行记录，判断当前处于 A/B/C/D 哪一阶段，再请用户确认。"
     existing = [name for name in ("setup.md", "plan.md", "sync.yaml", "results/index.md", "results.md")
                 if (ws / name).exists()]
     stage_lines = "\n".join(f"- [ ] {s}（待判定）" for s in stages)
@@ -451,6 +460,82 @@ def _ensure_progress_in_sync_push(cfg: Config, report: MigrateReport, logs: list
         rel = _workspace_rel(root, ws)
         report.sync_push_upgraded.append(rel)
         logs.append(f"同步清单升级：{rel}/sync.yaml push 加入 PROGRESS.md")
+
+
+def _ensure_mine_sub_experiment_layout(cfg: Config, report: MigrateReport, logs: list[str]) -> None:
+    """Add the sub-experiment entry point to existing type:mine workspaces.
+
+    Existing user content is preserved. RESULTS_LAYOUT.md is replaced only when it is still the old
+    generated contract, because users may have edited it by hand.
+    """
+    root = cfg.experiments_path
+    if not root.exists():
+        return
+    from . import repro
+
+    for ws in _experiment_workspaces(root):
+        if _workspace_kind(ws) != "mine":
+            continue
+        rel = _workspace_rel(root, ws)
+        changed = False
+
+        readme = ws / "sub_experiments" / "README.md"
+        if not readme.exists():
+            readme.parent.mkdir(parents=True, exist_ok=True)
+            readme.write_text(repro.build_sub_experiments_readme(ws.name), encoding="utf-8")
+            changed = True
+
+        layout = ws / "RESULTS_LAYOUT.md"
+        if layout.exists() and layout.read_text(encoding="utf-8") == repro.RESULTS_LAYOUT:
+            layout.write_text(repro.build_results_layout("mine"), encoding="utf-8")
+            changed = True
+        elif not layout.exists():
+            layout.write_text(repro.build_results_layout("mine"), encoding="utf-8")
+            changed = True
+
+        if changed:
+            report.mine_sub_experiments_upgraded.append(rel)
+            logs.append(f"mine 布局升级：{rel}/sub_experiments/（新增子实验入口与结果规则）")
+
+        sync_file = ws / "sync.yaml"
+        if not sync_file.exists():
+            continue
+        try:
+            data = yaml.safe_load(sync_file.read_text(encoding="utf-8")) or {}
+        except yaml.YAMLError:
+            continue
+        if not isinstance(data, dict):
+            continue
+        push = data.get("push") or []
+        pull = data.get("pull") or []
+        if not isinstance(push, list):
+            push = []
+        if not isinstance(pull, list):
+            pull = []
+
+        sync_changed = False
+        if "sub_experiments/**" not in push:
+            anchor = "RESULTS_LAYOUT.md"
+            if anchor in push:
+                push.insert(push.index(anchor), "sub_experiments/**")
+            else:
+                push.append("sub_experiments/**")
+            sync_changed = True
+        for item in (
+            "sub_experiments/*/results/metrics/**",
+            "sub_experiments/*/results/plots/**",
+            "sub_experiments/*/results/tables/**",
+        ):
+            if item not in pull:
+                pull.append(item)
+                sync_changed = True
+        if sync_changed:
+            data["push"] = push
+            data["pull"] = pull
+            sync_file.write_text(yaml.safe_dump(data, allow_unicode=True, sort_keys=False,
+                                                default_flow_style=False), encoding="utf-8")
+            report.sync_sub_experiments_upgraded.append(rel)
+            logs.append(f"同步清单升级：{rel}/sync.yaml 加入 sub_experiments 规则")
 
 
 def _move_into_workspace(src: Path, dst: Path, label: str, report: MigrateReport, logs: list[str]) -> None:
@@ -564,6 +649,7 @@ def run_migrate(cfg: Config, scope: str = "project", *, do_move: bool = False) -
     _upgrade_results_files(cfg, report, logs)           # results.md -> results/index.md
     _ensure_progress_files(cfg, report, logs)           # old workspaces get user-confirmed progress tracking
     _ensure_progress_in_sync_push(cfg, report, logs)     # remote agent receives PROGRESS.md
+    _ensure_mine_sub_experiment_layout(cfg, report, logs)  # mine workspaces get isolated sub-experiment slots
 
     # Persist state (record current lock hash so the next migrate can detect changes).
     state["lock_hash"] = lock_hash
