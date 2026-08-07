@@ -1,6 +1,6 @@
 ---
 name: review
-description: 当用户想做文献综述、综述某个方向、把已读论文汇总成综述、或对某研究方向大量检索后生成综述笔记时使用。两条路径：已有笔记汇总 / 方向检索后精读汇总。
+description: 当用户想做文献调研、文献综述、综述某个方向、把已读论文汇总成综述、或对某研究方向大量检索后生成综述笔记时使用。两条路径：已有笔记汇总 / 方向检索后精读汇总。
 allowed-tools: Bash(*), Read, Grep, Glob, Write, Edit, WebSearch, WebFetch, mcp__codex__codex, mcp__codex__codex-reply
 ---
 

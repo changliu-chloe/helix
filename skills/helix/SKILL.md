@@ -1,6 +1,6 @@
 ---
 name: helix
-description: 论文科研总入口。当用户想找论文、读论文、追踪某领域最新进展、查自己的笔记库、开启研究日，或提到某篇论文（arXiv id/标题/链接）时使用。根据意图路由到 search / deep-read / daily 子流程。
+description: 论文科研总入口。当用户想做论文/文献调研、找论文、读论文、追踪某领域最新进展、查自己的笔记库、开启研究日，或提到某篇论文（arXiv id/标题/链接）时使用。根据意图路由到 search / deep-read / review / daily / reproduce 子流程。
 ---
 
 # helix 论文科研总入口

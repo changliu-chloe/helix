@@ -1,6 +1,6 @@
 ---
 name: search
-description: 当用户想检索论文、查本地笔记库、跨 arXiv/S2/DBLP 找文献、按关键词或领域搜索时使用。路由到 helix 的本地 FTS 检索或跨源检索。
+description: 当用户想调研某个论文方向、检索论文、查本地笔记库、跨 arXiv/S2/DBLP 找文献、按关键词或领域搜索时使用。路由到 helix 的本地 FTS 检索或跨源检索。
 ---
 
 # 论文检索路由
